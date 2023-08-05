@@ -1,8 +1,11 @@
 # Load the data from txt files as data structure.
 import os
+import re
 data_path = './datasets'
 merged_data_path = './datasets/merged_datasets'
 os.makedirs(merged_data_path, exist_ok=True)
+visualization_folder = "./datasets/merged_datasets/saved_images"
+os.makedirs(visualization_folder, exist_ok=True)
 txt_files = [f for f in os.listdir(data_path) if f.endswith('.txt')]
 
 import pandas as pd
@@ -15,8 +18,12 @@ import matplotlib.ticker as ticker
 def time_to_minutes(hour, minute):
     total_minutes = hour * 60 + minute
     return total_minutes
+def save_plot_to_folder(plot, filename, output_folder):
+    filepath = os.path.join(output_folder, filename)
+    plot.savefig(filepath)
+    plt.close()
 
-def data_preprocess(path):
+def data_preprocess(path, visualization_folder):
     data = pd.read_csv(path,sep='\t',header=None)
     data = data.fillna(0)
     data.columns = ['cell_id', 'time_stp', 'country_code', 'SMS_in', 'SMS_out', 'Call_in', 'Call_out', 'Internet']
@@ -37,22 +44,27 @@ def data_preprocess(path):
     data_nocc.drop(['time_stp', 'time_stp_seconds','dt_obj'], axis=1, inplace=True)
 
     # Visualisation: the data structure can be visualized by uncommenting the below codes.
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111, projection='3d')
-    # cell_ids = data_nocc['cell_id']
-    # time_stamps = data_nocc['formatted_time']
-    # time_stamps = pd.to_datetime(time_stamps)
-    # time_stamps = mdates.date2num(time_stamps)
-    # colors = data_nocc['SMS_in']  # 用SMS_in列的值作为颜色
-    #
-    # ax.scatter(cell_ids, time_stamps, colors, c=colors, cmap='viridis', marker='o')
-    # ax.set_xlabel('Cell ID')
-    # # ax.set_ylabel('Time Stamp')
-    # ax.yaxis.set_major_locator(ticker.AutoLocator())
-    # ax.yaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M:%S'))
-    # ax.set_zlabel('SMS_in')
-    # ax.set_title('3D Scatter Plot with SMS_in')
-    # plt.show()
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    cell_ids = data_nocc['cell_id']
+    time_stamps = data_nocc['formatted_time']
+    time_stamps = pd.to_datetime(time_stamps)
+    time_stamps = mdates.date2num(time_stamps)
+    colors = data_nocc['SMS_in']  # 用SMS_in列的值作为颜色
+
+    ax.scatter(cell_ids, time_stamps, colors, c=colors, cmap='viridis', marker='o')
+    ax.set_xlabel('Cell ID')
+    ax.set_ylabel('Time Stamp')
+    ax.yaxis.set_major_locator(ticker.AutoLocator())
+    ax.yaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M:%S'))
+    ax.set_zlabel('SMS_in')
+    ax.set_title('3D Scatter Plot with SMS_in')
+    base_filename = os.path.basename(path)
+    pattern = r'sms-call-internet-mi-(\d{4})-(\d{2})-(\d{2})'
+    match = re.search(pattern, base_filename)
+    image_name = match.group(0) if match else None
+    filename = f"{image_name.replace('call-internet-mi-', '').replace('-', '_')}_visual_output.png"
+    save_plot_to_folder(plt, filename, visualization_folder)
     return data_nocc
 
 
@@ -61,6 +73,6 @@ for txt_file in txt_files:
     merged_path = os.path.join(merged_data_path, txt_file)
     with open(file_path, 'r') as file:
         print(f"Open File: {txt_file}")
-        data = data_preprocess(file_path)
+        data = data_preprocess(file_path, visualization_folder)
         data.to_csv(merged_path, index=False)
         print("----------------------------------------")
