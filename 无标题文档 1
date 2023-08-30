@@ -1,0 +1,189 @@
+(gnn) jiale@jiale:~/Projects/CDR$ python dataloader_3zones.py --load_model model_001.pt
+Test: Loss 0.1199 |  | Time 0.02
+AUC Score of zone 48: 0.9270782608695654
+Test: Loss 0.1048 |  | Time 0.02
+AUC Score of zone 25: 0.8761043478260869
+Test: Loss 9.3443 |  | Time 0.02
+AUC Score of zone 14: 0.6833695652173912
+Test: Loss 0.1067 |  | Time 0.02
+AUC Score of zone 38: 0.9504347826086956
+Test: Loss 0.1659 |  | Time 0.02
+AUC Score of zone 69: 0.7671869565217392
+Test: Loss 0.1940 |  | Time 0.02
+AUC Score of zone 72: 0.7000827886710239
+Test: Loss 0.1913 |  | Time 0.02
+AUC Score of zone 70: 0.7305347826086956
+Test: Loss 0.1392 |  | Time 0.02
+AUC Score of zone 52: 0.8558434782608695
+Test: Loss 0.2549 |  | Time 0.02
+AUC Score of zone 94: 0.6017
+Test: Loss 0.1089 |  | Time 0.02
+AUC Score of zone 28: 0.8939391304347827
+Test: Loss 0.2213 |  | Time 0.02
+AUC Score of zone 80: 0.613695652173913
+Test: Loss 0.1945 |  | Time 0.02
+AUC Score of zone 79: 0.6908173913043478
+Test: Loss 0.1666 |  | Time 0.02
+AUC Score of zone 68: 0.7545391304347826
+Test: Loss 0.1649 |  | Time 0.02
+AUC Score of zone 63: 0.785604347826087
+Test: Loss 0.2224 |  | Time 0.02
+AUC Score of zone 81: 0.6942608695652173
+Test: Loss 0.2570 |  | Time 0.02
+AUC Score of zone 99: 0.6817739130434782
+Test: Loss 0.1107 |  | Time 0.02
+AUC Score of zone 37: 0.9093565217391304
+Test: Loss 0.2248 |  | Time 0.02
+AUC Score of zone 89: 0.6122695652173913
+Test: Loss 0.2571 |  | Time 0.02
+AUC Score of zone 98: 0.5948304347826087
+Test: Loss 0.1397 |  | Time 0.02
+AUC Score of zone 53: 0.8626086956521739
+Test: Loss 0.1080 |  | Time 0.02
+AUC Score of zone 34: 0.8936695652173912
+Test: Loss 10.7200 |  | Time 0.02
+AUC Score of zone 15: 0.672508695652174
+Test: Loss 0.1920 |  | Time 0.02
+AUC Score of zone 73: 0.713986956521739
+Test: Loss 0.2227 |  | Time 0.02
+AUC Score of zone 84: 0.6453869565217392
+Test: Loss 0.2245 |  | Time 0.02
+AUC Score of zone 83: 0.6258347826086956
+Test: Loss 0.1067 |  | Time 0.02
+AUC Score of zone 32: 0.9507782608695653
+Test: Loss 0.2572 |  | Time 0.02
+AUC Score of zone 95: 0.597591304347826
+Test: Loss 0.2570 |  | Time 0.02
+AUC Score of zone 97: 0.6138652173913044
+Test: Loss 0.2255 |  | Time 0.02
+AUC Score of zone 86: 0.6425695652173913
+Test: Loss 0.2254 |  | Time 0.02
+AUC Score of zone 88: 0.6442913043478262
+Test: Loss 0.1207 |  | Time 0.02
+AUC Score of zone 42: 0.9272217391304347
+Test: Loss 0.2247 |  | Time 0.02
+AUC Score of zone 85: 0.6808217391304349
+Test: Loss 0.1936 |  | Time 0.02
+AUC Score of zone 78: 0.6780391304347827
+Test: Loss 0.1963 |  | Time 0.02
+AUC Score of zone 74: 0.7155217391304348
+Test: Loss 0.1090 |  | Time 0.02
+AUC Score of zone 33: 0.9611347826086957
+Test: Loss 0.1095 |  | Time 0.02
+AUC Score of zone 36: 0.943908695652174
+Test: Loss 0.1209 |  | Time 0.02
+AUC Score of zone 43: 0.9009826086956523
+Test: Loss 0.1981 |  | Time 0.02
+AUC Score of zone 77: 0.6936913043478261
+Test: Loss 0.2574 |  | Time 0.02
+AUC Score of zone 96: 0.5841695652173914
+Test: Loss 0.1971 |  | Time 0.02
+AUC Score of zone 75: 0.7221347826086957
+Test: Loss 0.1240 |  | Time 0.02
+AUC Score of zone 47: 0.9389565217391305
+Test: Loss 0.1993 |  | Time 0.02
+AUC Score of zone 76: 0.748995652173913
+Test: Loss 0.1692 |  | Time 0.02
+AUC Score of zone 64: 0.7920304347826087
+Test: Loss 0.1471 |  | Time 0.02
+AUC Score of zone 57: 0.8426347826086956
+Test: Loss 0.1148 |  | Time 0.02
+AUC Score of zone 35: 0.880704347826087
+Test: Loss 0.2280 |  | Time 0.02
+AUC Score of zone 87: 0.6315869565217391
+AUC Score avraged: 0.7571532175230942
+
+
+(gnn) jiale@jiale:~/Projects/CDR$ python dataloader_3zones.py --load_model model_001.pt --zones Middle
+Test: Loss 177.5532 |  | Time 0.02
+AUC Score of zone 1: 0.5088434782608695
+Test: Loss 141.9172 |  | Time 0.02
+AUC Score of zone 8: 0.518604347826087
+Test: Loss 10.3703 |  | Time 0.02
+AUC Score of zone 10: 0.6643608695652173
+Test: Loss 10.0678 |  | Time 0.03
+AUC Score of zone 12: 0.6603434782608696
+Test: Loss 0.1066 |  | Time 0.03
+AUC Score of zone 30: 0.9394478260869565
+Test: Loss 178.3558 |  | Time 0.03
+AUC Score of zone 2: 0.48424347826086955
+Test: Loss 0.1185 |  | Time 0.03
+AUC Score of zone 40: 0.9149869565217392
+Test: Loss 0.1387 |  | Time 0.03
+AUC Score of zone 50: 0.8363260869565217
+Test: Loss 175.1846 |  | Time 0.03
+AUC Score of zone 0: 0.5483565217391304
+Test: Loss 10.5278 |  | Time 0.04
+AUC Score of zone 11: 0.6753304347826087
+Test: Loss 152.8737 |  | Time 0.02
+AUC Score of zone 7: 0.47482608695652173
+Test: Loss 0.1130 |  | Time 0.03
+AUC Score of zone 20: 0.9003782608695652
+Test: Loss 137.4601 |  | Time 0.03
+AUC Score of zone 9: 0.5073434782608696
+Test: Loss 158.9540 |  | Time 0.03
+AUC Score of zone 3: 0.5310217391304348
+Test: Loss 9.4949 |  | Time 0.03
+AUC Score of zone 13: 0.6667826086956522
+Test: Loss 7.6515 |  | Time 0.02
+AUC Score of zone 17: 0.6909347826086958
+Test: Loss 0.1188 |  | Time 0.02
+AUC Score of zone 41: 0.9149260869565217
+Test: Loss 0.1114 |  | Time 0.03
+AUC Score of zone 22: 0.8992347826086956
+Test: Loss 0.1067 |  | Time 0.03
+AUC Score of zone 27: 0.8998782608695653
+Test: Loss 0.1113 |  | Time 0.02
+AUC Score of zone 21: 0.8497304347826087
+Test: Loss 0.1087 |  | Time 0.03
+AUC Score of zone 26: 0.8895173913043477
+Test: Loss 0.1654 |  | Time 0.03
+AUC Score of zone 62: 0.7593478260869565
+Test: Loss 0.2537 |  | Time 0.03
+AUC Score of zone 93: 0.5747260869565218
+Test: Loss 0.1622 |  | Time 0.03
+AUC Score of zone 60: 0.7788782608695652
+Test: Loss 7.9785 |  | Time 0.02
+AUC Score of zone 16: 0.6969043478260869
+Test: Loss 0.2567 |  | Time 0.02
+AUC Score of zone 90: 0.693795652173913
+Test: Loss 0.1199 |  | Time 0.03
+AUC Score of zone 49: 0.9451869565217392
+Test: Loss 144.0548 |  | Time 0.03
+AUC Score of zone 6: 0.5303043478260869
+Test: Loss 0.1426 |  | Time 0.03
+AUC Score of zone 51: 0.8276
+Test: Loss 146.3961 |  | Time 0.03
+AUC Score of zone 5: 0.5945304347826087
+Test: Loss 0.1408 |  | Time 0.03
+AUC Score of zone 59: 0.8843434782608696
+Test: Loss 0.2534 |  | Time 0.02
+AUC Score of zone 91: 0.6103521739130435
+Test: Loss 0.2221 |  | Time 0.02
+AUC Score of zone 82: 0.6345
+Test: Loss 0.1110 |  | Time 0.02
+AUC Score of zone 31: 0.9181217391304348
+Test: Loss 0.1640 |  | Time 0.02
+AUC Score of zone 61: 0.7499478260869564
+Test: Loss 0.1081 |  | Time 0.02
+AUC Score of zone 39: 0.9328521739130435
+Test: Loss 0.1410 |  | Time 0.03
+AUC Score of zone 58: 0.8631565217391304
+Test: Loss 0.1045 |  | Time 0.02
+AUC Score of zone 29: 0.8674173913043478
+Test: Loss 7.2728 |  | Time 0.03
+AUC Score of zone 18: 0.6836652173913044
+Test: Loss 0.1923 |  | Time 0.03
+AUC Score of zone 71: 0.6597565217391305
+Test: Loss 0.1060 |  | Time 0.03
+AUC Score of zone 24: 0.9062608695652175
+Test: Loss 0.2550 |  | Time 0.03
+AUC Score of zone 92: 0.6051608695652174
+Test: Loss 162.5028 |  | Time 0.03
+AUC Score of zone 4: 0.5879608695652173
+Test: Loss 6.8367 |  | Time 0.04
+AUC Score of zone 19: 0.7041304347826087
+Test: Loss 0.1085 |  | Time 0.03
+AUC Score of zone 23: 0.8944
+AUC Score avraged: 0.7306381642512078
+
