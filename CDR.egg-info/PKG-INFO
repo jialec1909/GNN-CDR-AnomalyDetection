@@ -1,0 +1,15 @@
+Metadata-Version: 2.1
+Name: CDR
+Version: 0.0.1
+Summary: Repo for GNN on CDR
+Home-page: https://github.com/jialec1909/GNN-CDR-AnomalyDetection.git
+Author: Jiale Chen
+Author-email: jiale.chen@stud.tu-darmstadt.de
+Requires-Python: >=3.10
+Requires-Dist: pandas>=1.5.3
+Requires-Dist: matplotlib>=3.7.1
+Requires-Dist: wandb>=0.15.12
+Requires-Dist: pygod>=1.0.0
+Requires-Dist: numpy>=1.25.0
+Requires-Dist: networkx>=2.8.4
+Requires-Dist: setuptools>=68.2.2
