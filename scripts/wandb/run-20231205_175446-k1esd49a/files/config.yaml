@@ -1,0 +1,60 @@
+wandb_version: 1
+
+learning_rate:
+  desc: null
+  value: 0.001
+architecture:
+  desc: null
+  value: Transformer-Decoder
+dataset:
+  desc: null
+  value: CDR
+epochs:
+  desc: null
+  value: 100
+optimizer:
+  desc: null
+  value: Adam
+batch_size:
+  desc: null
+  value: 24
+num_layers:
+  desc: null
+  value: 6
+heads:
+  desc: null
+  value: 2
+dim_k:
+  desc: null
+  value: 3
+dim_v:
+  desc: null
+  value: 3
+dropout:
+  desc: null
+  value: 0.0
+criterion:
+  desc: null
+  value: MSELoss
+_wandb:
+  desc: null
+  value:
+    python_version: 3.10.12
+    cli_version: 0.15.12
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1701795286.651803
+    t:
+      1:
+      - 1
+      - 55
+      3:
+      - 16
+      - 23
+      4: 3.10.12
+      5: 0.15.12
+      8:
+      - 5
+      - 13
+      13: linux-x86_64
