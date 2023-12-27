@@ -3,6 +3,37 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+# Done: 1.Add Positional Encoding
+# Done: add PE to the model.
+class PositionalEncoding(nn.Module):
+    def __init__(self, D, dropout=0.0, N = 6):
+        super(PositionalEncoding, self).__init__()
+        # D: the dimension of the embedding (default=6).
+        # dropout: the dropout value (default=0.0).
+        # max_len: the maximum length of the incoming sequence (default=6).
+        self.dropout = nn.Dropout(p=dropout)
+        # Compute the positional encodings once in log space.
+        pe = torch.zeros(1, N, D)
+        # pe: the positional encodings (batch_size, N, D).
+        # batch_size=1 means pe works same on all batches.
+        position = torch.arange(0, N, dtype=torch.float32).unsqueeze(1)
+        # position: the positions values computation matrix numerator (N, 1).
+        div_term = torch.pow(10000, torch.arange(0, D, 2, dtype = torch.float32) / D)
+        # div_term: the denominator div_term (D/2,).
+        pe[:,:, 0::2] = torch.sin(position * div_term)
+        # pe[:, 0::2]: the even index of pe (N, D/2).
+        pe[:,:, 1::2] = torch.cos(position * div_term)
+        # pe[:, 1::2]: the odd index of pe (N, D/2).
+        self.register_buffer('pe', pe)
+        # self.pe: the positional encodings (1, N, D).
+
+    def forward(self, X):
+        # x: the input sequence (batch_size, sequence_length, D).
+        X = X + self.pe[:, :X.shape[1], :].to(X.device)
+        # Broadcasting: self.P[:, :X.shape[1], :].to(X.device) (1, X.shape[1], D) -> (batch_size, X.shape[1], D).
+        return self.dropout(X)
+        # return: the output sequence (batch_size, sequence_length, D).
+
 class MultiHeadAttention(nn.Module):
     def __init__(self, dimension_emb, heads, dim_k, dim_v):
         super(MultiHeadAttention, self).__init__()
@@ -40,7 +71,7 @@ class MultiHeadAttention(nn.Module):
         multi_out = multi_attention.permute(0, 2, 1, 3).contiguous()  # out = out reshape/transpose to (b, n, h, d_v)
         multi_out = multi_out.view(batch_size, -1, self.h * self.d_v)  # out = out reshape to (b, n, h * d_v)
 
-        out = self.fc_out_linear(multi_out)
+        out = self.fc_out_linear(multi_out) # out = out linear to (b, n, d_model)
         return out
 
 
@@ -64,7 +95,7 @@ class TransformerDecoderLayer(nn.Module):
     def forward(self, batch_size, x, last_out, src_mask, trg_mask):
         attention = self.attention(batch_size, last_out, last_out, last_out, trg_mask)
         query = self.dropout(self.norm1(attention + last_out))
-        attention = self.attention(batch_size, query, x, x, src_mask)
+        attention = self.attention(batch_size, x, x, query, src_mask)
         attention_out = self.dropout(self.norm2(self.feed_forward(attention) + attention))
         out = self.norm3(attention_out + self.feed_forward(attention_out))
         return out
@@ -74,6 +105,7 @@ class TransformerDecoder(nn.Module):
     def __init__(self, embed_size, heads, dim_k, dim_v, num_layers, dropout, device):
         super(TransformerDecoder, self).__init__()
         self.device = device
+        self.positional_encoding = PositionalEncoding(D = embed_size, dropout = dropout, N = 6)
         self.layers = nn.ModuleList(
             [
                 TransformerDecoderLayer(
@@ -92,6 +124,7 @@ class TransformerDecoder(nn.Module):
         self.initial_y = True
 
     def forward(self, batch_size, x, src_mask, trg_mask, y=None):
+        x = self.positional_encoding(x)
         if self.initial_y:
             out = x
             self.initial_y = False
