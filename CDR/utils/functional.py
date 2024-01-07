@@ -38,7 +38,7 @@ def check_missing_data(data):
 def padding_missing_data(data):
     missing_ids = check_missing_data(data)
     full_tpx = np.arange(0, 1440, 10)
-    features_to_fill = ['merged_activity', 'SMS_in', 'SMS_out', 'Call_in', 'Call_out', 'Internet']
+    features_to_fill = ['SMS_in', 'SMS_out', 'Call_in', 'Call_out', 'Internet']
 
     for id in missing_ids:
         cell_data = data[data['cell_id'] == id]

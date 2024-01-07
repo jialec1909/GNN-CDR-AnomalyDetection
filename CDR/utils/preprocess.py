@@ -89,13 +89,19 @@ def transformer_preprocessing(df):
                                           "Internet"])
 
     activity_means = core_df[['SMS_in', 'SMS_out', 'Call_in', 'Call_out', 'Internet']].mean()
+    activity_std = core_df[['SMS_in', 'SMS_out', 'Call_in', 'Call_out', 'Internet']].std()
 
-    core_df['merged_activity'] = (core_df['SMS_in'] / activity_means['SMS_in'] +
-                                  core_df['SMS_out'] / activity_means['SMS_out'] +
-                                  core_df['Call_in'] / activity_means['Call_in'] +
-                                  core_df['Call_out'] / activity_means['Call_out'] +
-                                  core_df['Internet'] / activity_means['Internet']) / 5
-   # trans_data = core_df.drop(columns=['SMS_in', 'SMS_out', 'Call_in', 'Call_out', 'Internet'])
+    core_df['SMS_in'] = (core_df['SMS_in'] - activity_means['SMS_in']) / activity_std['SMS_in']
+    core_df['SMS_out'] = (core_df['SMS_out'] - activity_means['SMS_out']) / activity_std['SMS_out']
+    core_df['Call_in'] = (core_df['Call_in'] - activity_means['Call_in']) / activity_std['Call_in']
+    core_df['Call_out'] = (core_df['Call_out'] - activity_means['Call_out']) / activity_std['Call_out']
+    core_df['Internet'] = (core_df['Internet'] - activity_means['Internet']) / activity_std['Internet']
+
+    # core_df['merged_activity'] = (core_df['SMS_in'] / activity_means['SMS_in'] +
+    #                               core_df['SMS_out'] / activity_means['SMS_out'] +
+    #                               core_df['Call_in'] / activity_means['Call_in'] +
+    #                               core_df['Call_out'] / activity_means['Call_out'] +
+    #                               core_df['Internet'] / activity_means['Internet']) / 5
     return core_df
 
 opt = parse_opt()
