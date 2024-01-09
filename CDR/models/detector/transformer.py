@@ -90,7 +90,6 @@ class TransformerEncoder(nn.Module):
 class TransformerDecoderLayer(nn.Module):
     def __init__(self, embed_size, heads, dim_k, dim_v, dropout, device, forward_expansion = 32):
         super(TransformerDecoderLayer, self).__init__()
-        self.device = device
         self.attention = MultiHeadAttention(embed_size, heads, dim_k, dim_v)
         self.norm1 = nn.LayerNorm(embed_size)
         self.norm2 = nn.LayerNorm(embed_size)
@@ -103,8 +102,10 @@ class TransformerDecoderLayer(nn.Module):
         )
 
         self.dropout = nn.Dropout(dropout)
+        self.to(device)
 
     def forward(self, batch_size, x, last_out, src_mask, trg_mask):
+
         attention = self.attention(batch_size, last_out, last_out, last_out, trg_mask)
         query = self.dropout(self.norm1(attention + last_out))
         attention = self.attention(batch_size, x, x, query, src_mask)
@@ -116,7 +117,7 @@ class TransformerDecoderLayer(nn.Module):
 class TransformerDecoder(nn.Module):
     def __init__(self, embed_size, encoding_size, heads, dim_k, dim_v, sequence_length, predict_length, num_layers, dropout, device):
         super(TransformerDecoder, self).__init__()
-        self.device = device
+        self.to(device)
         self.sequence_length = sequence_length
         self.predict_length = predict_length
         self.embed_size = embed_size
@@ -158,10 +159,10 @@ class TransformerDecoder(nn.Module):
                 pre_out = self.linear(seq_out)  # (b*d, n) -> (b*d, m)
 
                 if self.predict_length == 1:
-                    last_step_prediction = pre_out.view(-1, 1, self.embed_size) # （b, 1, d)
+                    last_step_prediction = pre_out.view(-1, 1, self.encoding_size) # （b, 1, d)
                     current_input = torch.cat((current_input[:, 1:, :], last_step_prediction), dim = 1) # (b, n, d) = (b, n-1, d) + (b, 1, d)
                 else:
-                    last_step_prediction = pre_out.view(-1, self.predict_length, self.embed_size)  # （b, m, d)， m = predict_length
+                    last_step_prediction = pre_out.view(-1, self.predict_length, self.encoding_size)  # （b, m, d)， m = predict_length
                     current_input = torch.cat((current_input[:, self.predict_length:, :], last_step_prediction), dim = 1) # (b, n, d) = (b, n-m, d) + (b, m, d)
 
                 predictions.append(last_step_prediction)  # save all predictions

@@ -19,13 +19,13 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # parser.add_argument('--train', type = bool, default = True)
     # parser.add_argument('--predict', type = bool, default = False)
-    parser.add_argument('--epochs', type = int, default = 400)
+    parser.add_argument('--epochs', type = int, default = 100)
     parser.add_argument('--batch_size', type = int, default = 32)
     parser.add_argument('--sequence_length', type = int, default = 6)
     parser.add_argument('--predict_length', type = int, default = 1)
     parser.add_argument('--learning_rate', type = float, default = 0.005)
-    parser.add_argument('--train_size_factor', type = float, default = 0.6)
-    parser.add_argument('--test_size_factor', type = float, default = 0.4)
+    parser.add_argument('--train_size_factor', type = float, default = 0.2)
+    parser.add_argument('--test_size_factor', type = float, default = 0.1)
     parser.add_argument('--num_layers', type = int, default = 6)
     parser.add_argument('--heads', type = int, default = 8)
     parser.add_argument('--dim_k', type = int, default = 8)
@@ -73,11 +73,12 @@ class CellDataset(Dataset):
                 else:
                     target_pred.append(self.grouped[cell_id][sequence_idx + self.sequence_length:sequence_idx + self.sequence_length + self.predict_length])
 
-                # output is tensor
-                input_tensor = torch.FloatTensor(input_sequences)
-                target_tensor = torch.FloatTensor(target_pred)
-
                 i += 1
+
+            input_array = np.array(input_sequences)
+            input_tensor = torch.FloatTensor(input_array)
+            target_array = np.array(target_pred)
+            target_tensor = torch.FloatTensor(target_array)
 
             input_batch_tensor = input_tensor.reshape(-1, self.sequence_length, 5)
             y_label_tensor = torch.cat((input_batch_tensor[0,:,:].unsqueeze(0), input_batch_tensor[:-1,:,:]), dim = 0)
@@ -126,7 +127,7 @@ def test_collate_fn(batch):
     return x_batch, out_batch, cell_idx
 
 def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion, epochs, batch_size, train_size, test_size, learning_rate,
-                num_layers, heads, dim_k, dim_v, dropout, encoder_size, sequence_length = 6, predict_length = 1):
+                num_layers, heads, dim_k, dim_v, dropout, encoder_size, device, sequence_length = 6, predict_length = 1):
     wandb.init(
         project = "Transformer_CDR",
         config = {
@@ -159,8 +160,11 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion
             cell_idx = batch_cells[3]
             num_cells = len(cell_idx)
             x_batch = batch_cells[0] # current information shape (num_cells * 138, sequence_length, 5)
+            x_batch = x_batch.to(device)
             y_batch = batch_cells[1] # previous information shape (num_cells * 138, sequence_length, 5)
+            y_batch = y_batch.to(device)
             out_batch = batch_cells[2] # output label shape (num_cells * 138, predict_length, 5)
+            out_batch = out_batch.to(device)
             print(f'Batch: {batch_num}')
             print(f'Cells at the batch: {cell_idx.tolist()}')
 
@@ -190,7 +194,9 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion
         cell_idx = batch[2]
         num_cells = len(cell_idx)
         x_batch = batch[0]
+        x_batch = x_batch.to(device)
         out_batch = batch[1]
+        out_batch = out_batch.to(device)
         print(f'Cells at the batch: {cell_idx.tolist()}')
 
         input = x_batch.view(-1, sequence_length, 5)
@@ -199,7 +205,7 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion
         src_mask = torch.ones(input.shape)
         trg_mask = torch.ones(input.shape)
 
-        out = decoder(batch_size = num_cells * (144 - sequence_length), x = input, src_mask = src_mask, trg_mask = trg_mask, y = None)
+        out = decoder(batch_size = num_cells, x = input, src_mask = src_mask, trg_mask = trg_mask, y = None)
         predict_loss = criterion(out, out_target)
         print(f'Prediction Loss of batch {batch_num}:  {predict_loss.item()}')
         wandb.log({'test_batch': batch_num, 'test_batch loss': predict_loss.item(), 'test_t': step})
@@ -229,6 +235,7 @@ def main():
                                              sequence_length = sequence_length,
                                              predict_length = predict_length,
                                              num_layers = num_layers, dropout = dropout, device = device)
+    decoder.to(device)
 
     optimizer = optim.Adam(decoder.parameters(), lr = learning_rate)
 
@@ -261,7 +268,7 @@ def main():
         train_model(train_loader, test_loader, decoder, optimizer, criterion, epochs = epochs, batch_size = batch_size,
                     train_size = train_size_factor, test_size = test_size_factor, learning_rate = learning_rate,
                     num_layers = num_layers, heads = heads, dim_k = dim_k, dim_v = dim_v, dropout = dropout,
-                    encoder_size = encoder_size, sequence_length = 6, predict_length = 1)
+                    encoder_size = encoder_size, device = device, sequence_length = 6, predict_length = 1)
 
 
 
