@@ -10,8 +10,10 @@ from CDR.models.detector import transformer
 import wandb
 import argparse
 import matplotlib.pyplot as plt
+import CDR
 
-data_folder = "../CDR/datasets/merged_datasets/merged_trans"
+CDR_path = CDR.__path__[0]
+data_folder = f'{CDR_path}/../datasets/merged_datasets/merged_trans'
 datasets_list = os.listdir(data_folder)
 
 out_dir = "./runs"

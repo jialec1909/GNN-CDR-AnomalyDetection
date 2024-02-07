@@ -4,7 +4,7 @@ This is anomaly detection targeted processing on CDR datasets.
 To reach CDR datasets, please reach out https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/EGZHFV.
 
 Instructions:
-1. To preprocess the data structure, please firstly create a folder "`/datasets`" under the root folder of `CDR/CDR/` folder for the datasets.
+1. To preprocess the data structure, please firstly create a folder "`/datasets`" under the root folder of project folder for the datasets.
 2. To observe how the data distribution looks like, please run utils/observe.py.
 3. To preprocess the data structure for the transformer model, please run utils/preprocess.py.
 

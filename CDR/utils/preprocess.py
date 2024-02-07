@@ -1,12 +1,15 @@
 # Load the data from txt files as data structure.
 import os
 import re
-data_path = '../datasets'
-merged_data_path = '../datasets/merged_datasets/merged_txt'
+import CDR
+
+CDR_path = CDR.__path__[0]
+data_path = f'{CDR_path}/../datasets'
+merged_data_path = f'{CDR_path}/../datasets/merged_datasets/merged_txt'
 os.makedirs(merged_data_path, exist_ok=True)
-trans_merged_data_path = '../datasets/merged_datasets/merged_trans'
+trans_merged_data_path = f'{CDR_path}/../datasets/merged_datasets/merged_trans'
 os.makedirs(trans_merged_data_path, exist_ok=True)
-visualization_folder = "../datasets/merged_datasets/saved_images"
+visualization_folder = f"{CDR_path}/../datasets/merged_datasets/saved_images"
 os.makedirs(visualization_folder, exist_ok=True)
 txt_files = [f for f in os.listdir(data_path) if f.endswith('.txt')]
 merged_files = [f for f in os.listdir(merged_data_path) if f.endswith('.txt')]

@@ -1,8 +1,11 @@
 # Load the data from txt files as data structure.
 import os
 import re
-data_path = '/home/jiale/Projects/CDR/datasets'
-visualization_folder = "/home/jiale/Projects/CDR/datasets/merged_datasets/saved_images/observe"
+import CDR
+
+CDR_path = CDR.__path__[0]
+data_path = f'{CDR_path}/../datasets'
+visualization_folder = f"{CDR_path}/../datasets/merged_datasets/saved_images/observe"
 os.makedirs(visualization_folder, exist_ok=True)
 txt_files = [f for f in os.listdir(data_path) if f.endswith('.txt')]
 
