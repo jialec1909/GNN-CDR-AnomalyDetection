@@ -36,18 +36,18 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # parser.add_argument('--train', type = bool, default = True)
     # parser.add_argument('--predict', type = bool, default = False)
-    parser.add_argument('--epochs', type = int, default = 200)
+    parser.add_argument('--epochs', type = int, default = 100)
     parser.add_argument('--batch_size', type = int, default = 32)
     parser.add_argument('--sequence_length', type = int, default = 6)
     parser.add_argument('--predict_length', type = int, default = 1)
-    parser.add_argument('--learning_rate', type = float, default = 0.01)
+    parser.add_argument('--learning_rate', type = float, default = 0.03)
     parser.add_argument('--train_size_factor', type = float, default = 0.3)
-    parser.add_argument('--test_size_factor', type = float, default = 0.01)
+    parser.add_argument('--test_size_factor', type = float, default = 0.001)
     parser.add_argument('--num_layers', type = int, default = 6)
     parser.add_argument('--heads', type = int, default = 8)
     parser.add_argument('--dim_k', type = int, default = 8)
     parser.add_argument('--dim_v', type = int, default = 8)
-    parser.add_argument('--dropout', type = float, default = 0.01)
+    parser.add_argument('--dropout', type = float, default = 0.00)
     parser.add_argument('--encoder_size', type = int, default = 64)
     parser.add_argument('--if_write', type = bool, default = True)
     opt = parser.parse_args()
@@ -152,35 +152,35 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion
     )
     wandb.watch(decoder)
     step = 0
-    # print(f'---------------------------Training dataset-------------------------------------')
-    # for epoch in range(epochs):
-    #     print(f'---------Epoch: {epoch}------')
-    #     epoch_loss = 0.0
-    #     for batch_num, batch_cells in enumerate(train_dataloader):
-    #         step += 1
-    #         cell_idx = batch_cells[1]
-    #         num_cells = len(cell_idx)
-    #         x_batch = batch_cells[0] # current information shape (num_cells, 144, 5)
-    #         input = x_batch.view(-1, 144, 5).to(device)
-    #         print(f'Batch: {batch_num}')
-    #         print(f'Cells at the batch: {cell_idx.tolist()}')
-    #
-    #         input_mask = future_mask(input.shape[1]).unsqueeze(0).to(device)
-    #
-    #         optimizer.zero_grad()
-    #         out = decoder(batch_size = num_cells, x = input, future_mask = input_mask, status = 'train')
-    #         out_loss = out[:, :-1, :]
-    #         label_loss = input[:, 1:, :]
-    #
-    #         loss = criterion(out_loss, label_loss)
-    #         print(f'Loss of batch {batch_num}:  {loss.item()}')
-    #         epoch_loss += loss.item()
-    #         loss.backward()
-    #         optimizer.step()
-    #         wandb.log({'batch': batch_num, 'batch loss': loss.item(), 't': step})
-    #     avg_batch_loss = epoch_loss / len(train_dataloader)
-    #     wandb.log({'epoch': epoch, 'Average epoch loss': avg_batch_loss})
-    #     print(f'---------Epoch: {epoch}------, average loss of the dataset: {avg_batch_loss}------')
+    print(f'---------------------------Training dataset-------------------------------------')
+    for epoch in range(epochs):
+        print(f'---------Epoch: {epoch}------')
+        epoch_loss = 0.0
+        for batch_num, batch_cells in enumerate(train_dataloader):
+            step += 1
+            cell_idx = batch_cells[1]
+            num_cells = len(cell_idx)
+            x_batch = batch_cells[0] # current information shape (num_cells, 144, 5)
+            input = x_batch.view(-1, 144, 5).to(device)
+            print(f'Batch: {batch_num}')
+            print(f'Cells at the batch: {cell_idx.tolist()}')
+
+            input_mask = future_mask(input.shape[1]).unsqueeze(0).to(device)
+
+            optimizer.zero_grad()
+            out = decoder(batch_size = num_cells, x = input, future_mask = input_mask, status = 'train')
+            out_loss = out[:, :-1, :]
+            label_loss = input[:, 1:, :]
+
+            loss = criterion(out_loss, label_loss)
+            print(f'Loss of batch {batch_num}:  {loss.item()}')
+            epoch_loss += loss.item()
+            loss.backward()
+            optimizer.step()
+            wandb.log({'batch': batch_num, 'batch loss': loss.item(), 't': step})
+        avg_batch_loss = epoch_loss / len(train_dataloader)
+        wandb.log({'epoch': epoch, 'Average epoch loss': avg_batch_loss})
+        print(f'---------Epoch: {epoch}------, average loss of the dataset: {avg_batch_loss}------')
 
     print(f'---------------------------Training ends for the batch-------------------------------------')
     print(f'---------------------------Testing prediction begins-------------------------------------')
