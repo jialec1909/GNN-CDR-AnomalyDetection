@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, D, dropout=0.0, N = 6):
+    def __init__(self, D, dropout=0.0, N = 144):
         super(PositionalEncoding, self).__init__()
         # D: the dimension of the embedding.
         # dropout: the dropout value (default=0.0).
@@ -56,16 +56,16 @@ class MultiHeadAttention(nn.Module):
         keys = keys.permute(0, 2, 1, 3)
         queries = self.linear_queries(query).view(batch_size, -1, self.h, self.d_k)
         queries = queries.permute(0, 2, 1, 3)  # queries = query reshape/transpose to (b, h, n, d_k)
-        mask = mask.unsqueeze(1)  # (b, 1, n, d)
-        expanded_mask = mask.expand(-1, 2, -1, -1) # (b, h, n, d)
 
         # Einsum does batch matrix multiplication for query*keys for each training example
         # with every other training example --> similarity between Q and K
         keys_T = keys.permute(0, 1, 3, 2)  # keys_T = keys transpose to (b, h, d_k, n)
         scores = torch.einsum("bhnk,bhkm->bhnm", [queries, keys_T])
         ## FIXME: fix mask shape
-        # if mask is not None:
-        #     attention = scores.masked_fill(expanded_mask == 0, float("-1e20"))
+        if mask is not None:
+            mask = mask.unsqueeze (1)  # (b, 1, n, n)
+            expanded_mask = mask.expand (batch_size, self.h, -1, -1)  # (b, h, n, n)
+            scores = scores.masked_fill_(expanded_mask, float("-1e20"))
 
         attention = torch.softmax(scores, dim = -1)  # attention = shape (b, h, n, n)
 
@@ -104,11 +104,11 @@ class TransformerDecoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.to(device)
 
-    def forward(self, batch_size, x, last_out, src_mask, trg_mask):
+    def forward(self, batch_size, x, last_out, future_mask):
 
-        attention = self.attention(batch_size, last_out, last_out, last_out, trg_mask)
-        query = self.dropout(self.norm1(attention + last_out))
-        attention = self.attention(batch_size, x, x, query, src_mask)
+        attention = self.attention(batch_size, last_out, last_out, last_out, future_mask)
+        query = self.dropout(self.norm1(attention + x))
+        attention = self.attention(batch_size, x, x, query, None)
         attention_out = self.dropout(self.norm2(self.feed_forward(attention) + attention))
         out = self.norm3(attention_out + self.feed_forward(attention_out))
         return out
@@ -123,7 +123,7 @@ class TransformerDecoder(nn.Module):
         self.embed_size = embed_size
         self.encoding_size = encoding_size
         self.encoding = TransformerEncoder(embed_size = self.embed_size, expansion_size = self.encoding_size)
-        self.positional_encoding = PositionalEncoding(D = self.embed_size, dropout = dropout, N = sequence_length)
+        self.positional_encoding = PositionalEncoding(D = self.embed_size, dropout = dropout, N = 144)
         self.layers = nn.ModuleList(
             [
                 TransformerDecoderLayer(
@@ -141,46 +141,26 @@ class TransformerDecoder(nn.Module):
         self.linear = nn.Linear(sequence_length, predict_length)
         self.decoding = TransformerEncoder(embed_size = self.encoding_size, expansion_size = self.embed_size)
         self.dropout = nn.Dropout(dropout)
-        self.initial_y = True
 
-    def forward(self, batch_size, x, src_mask, trg_mask, y=None):
-        x = self.positional_encoding(x)
-        x = self.encoding(x)
-        if y is None:  # when use the model to predict
-            predictions = []
-            current_input = x
+    def forward(self, batch_size, x, future_mask, status = 'train'):
+        if status == 'train':
 
-            for _ in range(144 - self.sequence_length):
-                out = current_input
-                for layer in self.layers:
-                    out = layer(batch_size, out, out, src_mask, trg_mask)
-
-                seq_out = out.view(-1, self.sequence_length)  # (b, n, d) -> (b*d, n)
-                pre_out = self.linear(seq_out)  # (b*d, n) -> (b*d, m)
-
-                if self.predict_length == 1:
-                    last_step_prediction = pre_out.view(-1, 1, self.encoding_size) # （b, 1, d)
-                    current_input = torch.cat((current_input[:, 1:, :], last_step_prediction), dim = 1) # (b, n, d) = (b, n-1, d) + (b, 1, d)
-                else:
-                    last_step_prediction = pre_out.view(-1, self.predict_length, self.encoding_size)  # （b, m, d)， m = predict_length
-                    current_input = torch.cat((current_input[:, self.predict_length:, :], last_step_prediction), dim = 1) # (b, n, d) = (b, n-m, d) + (b, m, d)
-
-                predictions.append(last_step_prediction)  # save all predictions
-            out = torch.cat(predictions, dim = 0)  # (b* 144-sequence_length, m , d)
-
-        else: # when use the model to train
-            y = self.positional_encoding(y)
-            y = self.encoding(y)
-            out = y
+            x = self.positional_encoding(x)
+            x = self.encoding(x)
+            out = x
 
             for layer in self.layers:
-                out = layer(batch_size, x, out, src_mask, trg_mask)
+                out = layer (batch_size, x, out, future_mask)  # (b, n, d)
 
-            seq_out = out.view(-1, self.sequence_length) # (b, n, d) -> (b*d, n)
-            pre_out = self.linear(seq_out) # (b*d, n) -+> (b*d, m)
-            out = pre_out.view(-1, self.predict_length, self.encoding_size) # (b*d, m) -> (b, m, d), m = predict_length
 
-        out = self.decoding(out)
+            out = self.decoding(out) # （b, n, d）-> (b, n, D)
+
+        else:
+            x = self.positional_encoding(x) # (b, n, d)
+            x = self.encoding(x)
+            out = x
+            for layer in self.layers:
+                out = layer (batch_size, x, out, future_mask) # (b, n, d)
 
         return out
 
