@@ -161,6 +161,7 @@ class TransformerDecoder(nn.Module):
             out = x
             for layer in self.layers:
                 out = layer (batch_size, x, out, future_mask) # (b, n, d)
+            out = self.decoding(out)
 
         return out
 

@@ -13,7 +13,22 @@ import matplotlib.pyplot as plt
 
 data_folder = "../CDR/datasets/merged_datasets/merged_trans"
 datasets_list = os.listdir(data_folder)
-out_file = './prediction_and_target.csv'
+
+out_dir = "./runs"
+if not os.path.exists(out_dir):
+    os.makedirs(out_dir)
+
+existing_runs = [d for d in os.listdir (out_dir) if
+                 os.path.isdir (os.path.join (out_dir, d)) and d.startswith ('run')]
+existing_run_numbers = [int (run[3:]) for run in existing_runs if run[3:].isdigit ()]
+
+if existing_run_numbers:
+    new_run_no = max (existing_run_numbers) + 1
+else:
+    new_run_no = 1
+
+new_run_dir = os.path.join (out_dir, f'run{new_run_no}')
+os.makedirs (new_run_dir)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -58,7 +73,6 @@ class CellDataset(Dataset):
 
     def __getitem__(self, cell_id):
         ## FIXME： determine how to use window
-        ## TODO： fix difference for train and predict
         cell_id = self.cell_ids[cell_id]
 
         # input x: (num_cell, 144, 5), whole sequence for the cell i
@@ -68,8 +82,6 @@ class CellDataset(Dataset):
         input_array = np.array (input_sequences)
         input_tensor = torch.FloatTensor (input_array)
 
-        ## TODO: fix the label
-        # label_array = np.array (input_sequences[self.sequence_length:])
 
         input_batch_tensor = input_tensor.reshape (-1, 144, 5)
         cell_id = torch.tensor (cell_id)
@@ -88,7 +100,8 @@ def future_mask(size):
     mask = torch.triu(torch.ones((size, size)), diagonal=1).bool()
     return mask
 
-def tensors_to_csv(tensor1, tensor2, file_name, cell_id, reshape_dim = (144, 5), headers = ['prediction', 'target']):
+def tensors_to_csv(tensor1, tensor2, output_dir, cell_id, reshape_dim = (143, 5), headers = ['prediction', 'target']):
+
     df1 = pd.DataFrame(tensor1.cpu().detach().numpy().reshape(reshape_dim))
     df1.columns = [f'{headers[0]}_{i}' for i in range(df1.shape[1])]
 
@@ -96,11 +109,12 @@ def tensors_to_csv(tensor1, tensor2, file_name, cell_id, reshape_dim = (144, 5),
     df2.columns = [f'{headers[1]}_{i}' for i in range(df2.shape[1])]
 
     combined_df = pd.concat([df1, df2], axis=1)
+    file_name = os.path.join (output_dir, f'prediction_comparison of cell {cell_id}.csv')
     combined_df.to_csv(file_name, index=False)
     plt.figure(figsize = (15, 12))
 
     for i in range(5):
-        plt.subplot(5, 1, i + 1)  # 创建子图
+        plt.subplot(5, 1, i + 1)
         plt.plot(df1.index, df1.iloc[:, i], label = f'{headers[0]}_{i}', marker = 'o')
         plt.plot(df2.index, df2.iloc[:, i], label = f'{headers[1]}_{i}', marker = 'x')
         plt.title(f'Comparison of {headers[0]}_{i} and {headers[1]}_{i}')
@@ -109,7 +123,9 @@ def tensors_to_csv(tensor1, tensor2, file_name, cell_id, reshape_dim = (144, 5),
         plt.legend()
 
     plt.tight_layout()
-    plt.savefig(f'./prediction_and_target{cell_id}.png')
+    image_file_path = os.path.join (output_dir, f'prediction_and_target_in_cell_{cell_id}.png')
+    plt.savefig (image_file_path)
+    plt.close()
 
 def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion, epochs, batch_size, train_size, test_size, learning_rate,
                 num_layers, heads, dim_k, dim_v, dropout, encoder_size, device, if_write ,sequence_length = 6, predict_length = 1):
@@ -136,35 +152,35 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion
     )
     wandb.watch(decoder)
     step = 0
-    print(f'---------------------------Training dataset-------------------------------------')
-    for epoch in range(epochs):
-        print(f'---------Epoch: {epoch}------')
-        epoch_loss = 0.0
-        for batch_num, batch_cells in enumerate(train_dataloader):
-            step += 1
-            cell_idx = batch_cells[1]
-            num_cells = len(cell_idx)
-            x_batch = batch_cells[0] # current information shape (num_cells, 144, 5)
-            input = x_batch.view(-1, 144, 5).to(device)
-            print(f'Batch: {batch_num}')
-            print(f'Cells at the batch: {cell_idx.tolist()}')
-
-            input_mask = future_mask(input.shape[1]).unsqueeze(0).to(device)
-
-            optimizer.zero_grad()
-            out = decoder(batch_size = num_cells, x = input, future_mask = input_mask, status = 'train')
-            out_loss = out[:, :-1, :]
-            label_loss = input[:, 1:, :]
-
-            loss = criterion(out_loss, label_loss)
-            print(f'Loss of batch {batch_num}:  {loss.item()}')
-            epoch_loss += loss.item()
-            loss.backward()
-            optimizer.step()
-            wandb.log({'batch': batch_num, 'batch loss': loss.item(), 't': step})
-        avg_batch_loss = epoch_loss / len(train_dataloader)
-        wandb.log({'epoch': epoch, 'Average epoch loss': avg_batch_loss})
-        print(f'---------Epoch: {epoch}------, average loss of the dataset: {avg_batch_loss}------')
+    # print(f'---------------------------Training dataset-------------------------------------')
+    # for epoch in range(epochs):
+    #     print(f'---------Epoch: {epoch}------')
+    #     epoch_loss = 0.0
+    #     for batch_num, batch_cells in enumerate(train_dataloader):
+    #         step += 1
+    #         cell_idx = batch_cells[1]
+    #         num_cells = len(cell_idx)
+    #         x_batch = batch_cells[0] # current information shape (num_cells, 144, 5)
+    #         input = x_batch.view(-1, 144, 5).to(device)
+    #         print(f'Batch: {batch_num}')
+    #         print(f'Cells at the batch: {cell_idx.tolist()}')
+    #
+    #         input_mask = future_mask(input.shape[1]).unsqueeze(0).to(device)
+    #
+    #         optimizer.zero_grad()
+    #         out = decoder(batch_size = num_cells, x = input, future_mask = input_mask, status = 'train')
+    #         out_loss = out[:, :-1, :]
+    #         label_loss = input[:, 1:, :]
+    #
+    #         loss = criterion(out_loss, label_loss)
+    #         print(f'Loss of batch {batch_num}:  {loss.item()}')
+    #         epoch_loss += loss.item()
+    #         loss.backward()
+    #         optimizer.step()
+    #         wandb.log({'batch': batch_num, 'batch loss': loss.item(), 't': step})
+    #     avg_batch_loss = epoch_loss / len(train_dataloader)
+    #     wandb.log({'epoch': epoch, 'Average epoch loss': avg_batch_loss})
+    #     print(f'---------Epoch: {epoch}------, average loss of the dataset: {avg_batch_loss}------')
 
     print(f'---------------------------Training ends for the batch-------------------------------------')
     print(f'---------------------------Testing prediction begins-------------------------------------')
@@ -177,12 +193,12 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion
         input_mask = future_mask (x_batch.shape[1]).unsqueeze (0).to (device)
 
         for id, cell in enumerate(cell_idx):
-            input = x_batch[id].to(device)
+            input = x_batch[id].unsqueeze(0).to(device)
             out = decoder(batch_size = 1, x = input, future_mask = input_mask, status = 'predict')
             out_loss = out[:, :-1, :]
             label_loss = label[id]
             if if_write:
-                tensors_to_csv(out_loss, label_loss, out_file, cell_id = cell)
+                tensors_to_csv(out_loss, label_loss, output_dir = new_run_dir, cell_id = cell)
 
 
             wandb.log({'cell_id': cell, 'prediction': out, 'target': label})
