@@ -227,7 +227,7 @@ def main():
     if_write = opt.if_write
 
 
-    decoder = transformer_test.TransformerDecoder(embed_size = 5 , encoding_size = encoder_size, heads = heads, dim_k = dim_k, dim_v = dim_v,
+    decoder = transformer_test.Transformer(embed_size = 5 , encoding_size = encoder_size, heads = heads, dim_k = dim_k, dim_v = dim_v,
                                              sequence_length = sequence_length,
                                              predict_length = predict_length,
                                              num_layers = num_layers, dropout = dropout, device = device)
