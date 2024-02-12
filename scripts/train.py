@@ -2,63 +2,135 @@ import torch
 import os
 import torch.nn as nn
 import torch.optim as optim
+import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader, random_split
 import CDR.utils.functional as functional
 from CDR.models.detector import transformer
 import wandb
+import argparse
+import matplotlib.pyplot as plt
+import CDR
 
-data_folder = '../datasets/merged_datasets/merged_trans'
+CDR_path = CDR.__path__[0]
+data_folder = f'{CDR_path}/../datasets/merged_datasets/merged_trans'
 datasets_list = os.listdir(data_folder)
+
+out_dir = "./runs"
+if not os.path.exists(out_dir):
+    os.makedirs(out_dir)
+
+existing_runs = [d for d in os.listdir (out_dir) if
+                 os.path.isdir (os.path.join (out_dir, d)) and d.startswith ('run')]
+existing_run_numbers = [int (run[3:]) for run in existing_runs if run[3:].isdigit ()]
+
+if existing_run_numbers:
+    new_run_no = max (existing_run_numbers) + 1
+else:
+    new_run_no = 1
+
+new_run_dir = os.path.join (out_dir, f'run{new_run_no}')
+os.makedirs (new_run_dir)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+    # parser.add_argument('--train', type = bool, default = True)
+    # parser.add_argument('--predict', type = bool, default = False)
+    parser.add_argument('--epochs', type = int, default = 150)
+    parser.add_argument('--batch_size', type = int, default = 32)
+    parser.add_argument('--sequence_length', type = int, default = 6)
+    parser.add_argument('--predict_length', type = int, default = 1)
+    parser.add_argument('--learning_rate', type = float, default = 0.005)
+    parser.add_argument('--train_size_factor', type = float, default = 0.8)
+    # parser.add_argument('--test_size_factor', type = float, default = 0.001)
+    parser.add_argument('--num_layers', type = int, default = 6)
+    parser.add_argument('--heads', type = int, default = 8)
+    parser.add_argument('--dim_k', type = int, default = 8)
+    parser.add_argument('--dim_v', type = int, default = 8)
+    parser.add_argument('--dropout', type = float, default = 0.01)
+    parser.add_argument('--encoder_size', type = int, default = 64)
+    parser.add_argument('--if_write', type = bool, default = True)
+    opt = parser.parse_args()
+    return opt
 
 class CellDataset(Dataset):
     # --------------------------------------------
-    # input: dataframe, sequence_length
-    # output: sequence_tensor, next_sequence_tensor
+    # input: dataframe, sequence_length, predict_length
+    # output: input_tensor, target_tensor, cell_ids
 
     # --------------------------------------------
-    def __init__(self, dataframe, sequence_length=6):
-        self.sequence_length = sequence_length
+    def __init__(self, dataframe, sequence_length = 6):
         self.dataframe = dataframe
+        self.sequence_length = sequence_length
         self.cell_ids = dataframe['cell_id'].unique()
 
-        # each 'cell_id' contains a list, which is made up of activity values.
-        # self.grouped = self.dataframe.groupby('cell_id')['merged_activity'].apply(list)
-        self.grouped = dataframe.groupby('cell_id').apply(lambda x: x[
-            ['SMS_in', 'SMS_out', 'Call_in', 'Call_out', 'Internet', 'merged_activity']].values.tolist())
+        # each 'cell_id' contains data of 144 time points.
+        self.grouped = dataframe.groupby('cell_id').apply(
+            lambda x: np.array(x[['SMS_in', 'SMS_out', 'Call_in','Call_out', 'Internet']]))
 
     def __len__(self):
-        return len(self.cell_ids)  # Each cell contains 24 sequences
+        return len(self.cell_ids)  # Each cell contains 144 sequences as input.
 
     def __getitem__(self, cell_id):
+        ## FIXME： determine how to use window
         cell_id = self.cell_ids[cell_id]
 
-        sequences = []
-        next_sequences = []
+        # input x: (num_cell, 144, 5), whole sequence for the cell i
+        input_sequences = []  # x
+        input_sequences.append (self.grouped[cell_id])
 
-        for i in range(24):
-            sequence_idx = i * self.sequence_length
-            sequence = self.grouped[cell_id][sequence_idx:sequence_idx + self.sequence_length]
-            next_sequence = self.grouped[cell_id][
-                            sequence_idx + self.sequence_length:sequence_idx + 2 * self.sequence_length]
-
-            # output is tensor
-            sequence_tensor = torch.FloatTensor(sequence)
-            next_sequence_tensor = torch.FloatTensor(next_sequence) if len(
-                next_sequence) == self.sequence_length else torch.zeros_like(sequence_tensor)
-            sequences.append(sequence_tensor)
-            next_sequences.append(next_sequence_tensor)
-
-        sequence_batch_tensor = torch.stack(sequences).reshape(24, 6, 6)
-        next_sequence_batch_tensor = torch.stack(next_sequences).reshape(24, 6, 6)
-        cell_id = torch.tensor(cell_id)
-        return sequence_batch_tensor, next_sequence_batch_tensor, cell_id
+        input_array = np.array (input_sequences)
+        input_tensor = torch.FloatTensor (input_array)
 
 
-def train_model(dataloader, decoder, optimizer, criterion, epochs, batch_size, train_size, learning_rate):
+        input_batch_tensor = input_tensor.reshape (-1, 144, 5)
+        cell_id = torch.tensor (cell_id)
+
+        return input_batch_tensor, cell_id
+
+
+def collate_fn(batch):
+    x, cell_idx = zip(*batch)
+    x_batch = torch.stack(x)
+    cell_idx = torch.stack(cell_idx)
+    return x_batch, cell_idx
+
+def future_mask(size):
+    # upper-triangular matrix, upper right corner is True (to mask).
+    mask = torch.triu(torch.ones((size, size)), diagonal=1).bool()
+    return mask
+
+def tensors_to_csv(tensor1, tensor2, output_dir, cell_id, reshape_dim = (143, 5), headers = ['prediction', 'target']):
+
+    df1 = pd.DataFrame(tensor1.cpu().detach().numpy().reshape(reshape_dim))
+    df1.columns = [f'{headers[0]}_{i}' for i in range(df1.shape[1])]
+
+    df2 = pd.DataFrame(tensor2.cpu().detach().numpy().reshape(reshape_dim))
+    df2.columns = [f'{headers[1]}_{i}' for i in range(df2.shape[1])]
+
+    combined_df = pd.concat([df1, df2], axis=1)
+    file_name = os.path.join (output_dir, f'prediction_comparison of cell {cell_id}.csv')
+    combined_df.to_csv(file_name, index=False)
+    plt.figure(figsize = (15, 12))
+
+    for i in range(5):
+        plt.subplot(5, 1, i + 1)
+        plt.plot(df1.index, df1.iloc[:, i], label = f'{headers[0]}_{i}', marker = 'o')
+        plt.plot(df2.index, df2.iloc[:, i], label = f'{headers[1]}_{i}', marker = 'x')
+        plt.title(f'Comparison of {headers[0]}_{i} and {headers[1]}_{i}')
+        plt.xlabel('time_step')
+        plt.ylabel('Values')
+        plt.legend()
+
+    plt.tight_layout()
+    image_file_path = os.path.join (output_dir, f'prediction_and_target_in_cell_{cell_id}.png')
+    plt.savefig (image_file_path)
+    plt.close()
+
+def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion, epochs, batch_size, train_size, test_size, learning_rate,
+                num_layers, heads, dim_k, dim_v, dropout, encoder_size, device, if_write ,sequence_length = 6, predict_length = 1):
     wandb.init(
         project = "Transformer_CDR",
         config = {
@@ -66,105 +138,136 @@ def train_model(dataloader, decoder, optimizer, criterion, epochs, batch_size, t
             "architecture": "Transformer-Decoder",
             "dataset": "CDR",
             "Train_size": train_size,
+            "Test_size": test_size,
             "epochs": epochs,
             "optimizer": "Adam",
             "batch_size": batch_size,
-            "num_layers": 6,
-            "heads": 2,
-            "dim_k": 3,
-            "dim_v": 3,
-            "dropout": 0.0,
+            "num_layers": num_layers,
+            "heads": heads,
+            "dim_k": dim_k,
+            "dim_v": dim_v,
+            "dropout": dropout,
+            "sequence_length": sequence_length,
+            "predict_length": predict_length,
+            "encoder_size": encoder_size,
             "criterion": "MSELoss", }
     )
     wandb.watch(decoder)
     step = 0
+    print(f'---------------------------Training dataset-------------------------------------')
     for epoch in range(epochs):
         print(f'---------Epoch: {epoch}------')
         epoch_loss = 0.0
-        for batch_num, batch_cells in enumerate(dataloader):
+        for batch_num, batch_cells in enumerate(train_dataloader):
             step += 1
-            cell_idx = batch_cells[2]
+            cell_idx = batch_cells[1]
             num_cells = len(cell_idx)
-            sequence_batch = batch_cells[0]
-            next_sequence_batch = batch_cells[1]
+            x_batch = batch_cells[0] # current information shape (num_cells, 144, 5)
+            input = x_batch.view(-1, 144, 5).to(device)
             print(f'Batch: {batch_num}')
             print(f'Cells at the batch: {cell_idx.tolist()}')
 
-            input = sequence_batch.view(-1, 6, 6)
-            target = next_sequence_batch.view(-1, 6, 6)
-
-            src_mask = torch.ones(input.shape)
-            trg_mask = torch.ones(input.shape)
-
-            loss_mask = torch.ones(num_cells, 24, dtype = torch.bool)
-            loss_mask[:, 23] = False
-            loss_mask = loss_mask.view(-1)
-
-            target_cut = target[loss_mask]  # cut the last sequence(23) of each cell,
-            # because the value is 0, means nothing when calculating loss.
+            input_mask = future_mask(input.shape[1]).unsqueeze(0).to(device)
 
             optimizer.zero_grad()
+            out = decoder(batch_size = num_cells, x = input, future_mask = input_mask, status = 'train')
+            out_loss = out[:, :-1, :]
+            label_loss = input[:, 1:, :]
 
-            out = decoder(batch_size = num_cells * 24, x = input, src_mask = src_mask, trg_mask = trg_mask, y = target)
-            out_cut = out[loss_mask]
-            loss = criterion(out_cut, target_cut)
+            loss = criterion(out_loss, label_loss)
             print(f'Loss of batch {batch_num}:  {loss.item()}')
             epoch_loss += loss.item()
             loss.backward()
             optimizer.step()
             wandb.log({'batch': batch_num, 'batch loss': loss.item(), 't': step})
-        avg_batch_loss = epoch_loss / len(dataloader)
+        avg_batch_loss = epoch_loss / len(train_dataloader)
         wandb.log({'epoch': epoch, 'Average epoch loss': avg_batch_loss})
         print(f'---------Epoch: {epoch}------, average loss of the dataset: {avg_batch_loss}------')
+
+    print(f'---------------------------Training ends for the batch-------------------------------------')
+    print(f'---------------------------Testing prediction begins-------------------------------------')
+    for batch in test_dataloader:
+        cell_idx = batch[1]
+        x_batch = batch[0]
+        x_batch = x_batch.view(-1, 144, 5).to(device)
+        label = x_batch[:, 1:, :].to(device)
+        print(f'Cells at the batch: {cell_idx.tolist()}')
+        input_mask = future_mask (x_batch.shape[1]).unsqueeze (0).to (device)
+
+        for id, cell in enumerate(cell_idx):
+            input = x_batch[id].unsqueeze(0).to(device)
+            out = decoder(batch_size = 1, x = input, future_mask = input_mask, status = 'predict')
+            out_loss = out[:, :-1, :]
+            label_loss = label[id]
+            if if_write:
+                tensors_to_csv(out_loss, label_loss, output_dir = new_run_dir, cell_id = cell)
+
+
+            wandb.log({'cell_id': cell, 'prediction': out, 'target': label})
 
     wandb.finish()
 
 def main():
     # -----------------------------------------------------------------------------------------
-    decoder = transformer.TransformerDecoder(embed_size = 6, heads = 2, dim_k = 3, dim_v = 3,
-                                             num_layers = 6, dropout = 0.0, device = device)
-
+    opt = parse_args()
     criterion = nn.MSELoss()
-    learning_rate = 0.005
+    learning_rate = opt.learning_rate
+    batch_size = opt.batch_size
+    sequence_length = opt.sequence_length
+    predict_length = opt.predict_length
+    train_size_factor = opt.train_size_factor
+    test_size_factor = 1 - train_size_factor
+    num_layers = opt.num_layers
+    heads = opt.heads
+    dim_k = opt.dim_k
+    dim_v = opt.dim_v
+    dropout = opt.dropout
+    epochs = opt.epochs
+    encoder_size = opt.encoder_size
+    if_write = opt.if_write
+
+
+    decoder = transformer.TransformerDecoder(embed_size = 5 , encoding_size = encoder_size, heads = heads, dim_k = dim_k, dim_v = dim_v,
+                                             sequence_length = sequence_length,
+                                             predict_length = predict_length,
+                                             num_layers = num_layers, dropout = dropout, device = device)
+    decoder.to(device)
+
     optimizer = optim.Adam(decoder.parameters(), lr = learning_rate)
-    batch_size = 32
 
-    seed = 42
-    torch.manual_seed(seed)
-    # optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
-    def custom_collate_fn(batch):
-        sequence, next_sequence, cell_idx = zip(*batch)
-        sequence_batch = torch.stack(sequence)
-        next_sequence_batch = torch.stack(next_sequence)
-        cell_idx = torch.stack(cell_idx)
-        return sequence_batch, next_sequence_batch, cell_idx
+    # for datasets in datasets_list:
 
-    for datasets in datasets_list:
-        file_path = os.path.join(data_folder, datasets)
-        df = pd.read_csv(file_path)
-        core_df = pd.DataFrame(df)
-        data = functional.padding_missing_data(core_df)  # padding if necessary
-        # data shape -> (10000* 144, 8) ，data[i] -> i-th cell data
-        sequence_length = 6
-        dataset = CellDataset(data, sequence_length)
+    selected_dataset_index = 0
+    dataset = datasets_list[selected_dataset_index]
+    file_path = os.path.join(data_folder, dataset)
+    print(f'---------------------------Loading dataset: {dataset}-------------------------------------')
+    df = pd.read_csv(file_path)
+    core_df = pd.DataFrame(df)
+    data = functional.padding_missing_data(core_df)  # padding if necessary
+    # data shape -> (10000* 144, 8) ，data[i] -> i-th cell data
 
-        train_size_factor = 0.6
-        train_size = int(train_size_factor * len(dataset))  # test train for convergence
-        test_size = len(dataset) - train_size
-        train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+    sets = CellDataset(data, sequence_length = sequence_length)
 
-        train_loader = DataLoader(train_dataset, batch_size = batch_size, shuffle = True,
-                                  collate_fn = custom_collate_fn)
-        test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = True, collate_fn = custom_collate_fn)
-        # dataloader = DataLoader(dataset, batch_size=6, shuffle=True, collate_fn = custom_collate_fn)
-        # #
-        # # -----------------------------------------------------------------------------------------
-        # # -------------------------------- Train --------------------------------------------------
-        # # -----------------------------------------------------------------------------------------
-        #
-        train_model(train_loader, decoder, optimizer, criterion, epochs = 400, batch_size = batch_size, train_size = train_size_factor, learning_rate = learning_rate)
-    # #     for sequenes in dataloader:
-    # #         print(len(sequenes))
+    train_size = int(train_size_factor * len(sets))
+    test_size = len(sets) - train_size
+
+    train_dataset, test_dataset = random_split(sets, [train_size, test_size])
+
+    train_loader = DataLoader(train_dataset, batch_size = batch_size, shuffle = True,
+                                  collate_fn = collate_fn)
+    test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = True,
+                                    collate_fn = collate_fn)
+
+    # # -----------------------------------------------------------------------------------------
+    # # -------------------------------- Train --------------------------------------------------
+    # # -----------------------------------------------------------------------------------------
+    print(f'---------------------------Training dataset: {dataset}-------------------------------------')
+    train_model(train_loader, test_loader, decoder, optimizer, criterion, epochs = epochs, batch_size = batch_size,
+                    train_size = train_size_factor, test_size = test_size_factor, learning_rate = learning_rate,
+                    num_layers = num_layers, heads = heads, dim_k = dim_k, dim_v = dim_v, dropout = dropout,
+                    encoder_size = encoder_size, device = device, if_write = if_write, sequence_length = sequence_length, predict_length = predict_length)
+
+
     return
 
 if __name__ == '__main__':

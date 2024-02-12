@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader, random_split
 import CDR.utils.functional as functional
-from CDR.models.detector import transformer
+from CDR.models.detector import transformer_test
 import wandb
 import argparse
 import matplotlib.pyplot as plt
@@ -38,18 +38,18 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # parser.add_argument('--train', type = bool, default = True)
     # parser.add_argument('--predict', type = bool, default = False)
-    parser.add_argument('--epochs', type = int, default = 100)
+    parser.add_argument('--epochs', type = int, default = 150)
     parser.add_argument('--batch_size', type = int, default = 32)
     parser.add_argument('--sequence_length', type = int, default = 6)
     parser.add_argument('--predict_length', type = int, default = 1)
-    parser.add_argument('--learning_rate', type = float, default = 0.03)
-    parser.add_argument('--train_size_factor', type = float, default = 0.3)
-    parser.add_argument('--test_size_factor', type = float, default = 0.001)
+    parser.add_argument('--learning_rate', type = float, default = 0.005)
+    parser.add_argument('--train_size_factor', type = float, default = 0.8)
+    # parser.add_argument('--test_size_factor', type = float, default = 0.001)
     parser.add_argument('--num_layers', type = int, default = 6)
     parser.add_argument('--heads', type = int, default = 8)
     parser.add_argument('--dim_k', type = int, default = 8)
     parser.add_argument('--dim_v', type = int, default = 8)
-    parser.add_argument('--dropout', type = float, default = 0.00)
+    parser.add_argument('--dropout', type = float, default = 0.01)
     parser.add_argument('--encoder_size', type = int, default = 64)
     parser.add_argument('--if_write', type = bool, default = True)
     opt = parser.parse_args()
@@ -227,7 +227,7 @@ def main():
     if_write = opt.if_write
 
 
-    decoder = transformer.TransformerDecoder(embed_size = 5 , encoding_size = encoder_size, heads = heads, dim_k = dim_k, dim_v = dim_v,
+    decoder = transformer_test.TransformerDecoder(embed_size = 5 , encoding_size = encoder_size, heads = heads, dim_k = dim_k, dim_v = dim_v,
                                              sequence_length = sequence_length,
                                              predict_length = predict_length,
                                              num_layers = num_layers, dropout = dropout, device = device)
