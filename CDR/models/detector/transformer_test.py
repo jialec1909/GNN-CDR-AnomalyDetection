@@ -35,6 +35,21 @@ class PositionalEncoding(nn.Module):
         return self.dropout(X)
         # return: the output sequence (batch_size, sequence_length, D).
 
+
+class Additive_PositionalEncoding(nn.Module):
+    def __init__(self, D = 5, N = 144):
+        super(Additive_PositionalEncoding, self).__init__()
+        pe = torch.arange(0, N, dtype=torch.float32).unsqueeze(1) # (N, 1)
+        self.pe = pe / torch.max(pe)
+        self.D = D
+
+    def forward(self, X): # X: (b, n, D)
+        PE_expanded = self.pe.expand (-1, X.shape[0]).unsqueeze (2).transpose (0, 1)
+        PE = PE_expanded.to (X.device)
+        X = torch.cat ((X, PE), dim = 2)  # (b, 144, D+1)
+        return X
+
+
 class MultiHeadAttention(nn.Module):
     def __init__(self, dimension_emb, heads, dim_k, dim_v):
         super(MultiHeadAttention, self).__init__()
@@ -61,7 +76,7 @@ class MultiHeadAttention(nn.Module):
         # with every other training example --> similarity between Q and K
         keys_T = keys.permute(0, 1, 3, 2)  # keys_T = keys transpose to (b, h, d_k, n)
         scores = torch.einsum("bhnk,bhkm->bhnm", [queries, keys_T])
-        ## FIXME: fix mask shape
+
         if mask is not None:
             mask = mask.unsqueeze (1)  # (b, 1, n, n)
             expanded_mask = mask.expand (batch_size, self.h, -1, -1)  # (b, h, n, n)
@@ -76,36 +91,16 @@ class MultiHeadAttention(nn.Module):
         out = self.fc_out_linear(multi_out) # out = out linear to (b, n, d_model)
         return out
 
-class TransformerExpansion(nn.Module):
+class TransformerEncoder(nn.Module):
     def __init__(self, embed_size, expansion_size):
-        super(TransformerExpansion, self).__init__()
+        super(TransformerEncoder, self).__init__()
         self.embed_size = embed_size
         self.expansion_size = expansion_size
         self.linear = nn.Linear(self.embed_size, self.expansion_size)
 
     def forward(self, x):
+        self.linear.to(x.dtype)
         out = self.linear(x)
-        return out
-
-class TransformerEncoderLayer(nn.Module):
-    def __init__(self, embed_size, heads, dim_k, dim_v, dropout, device, forward_expansion = 32):
-        super(TransformerEncoderLayer, self).__init__()
-        self.attention = MultiHeadAttention(embed_size, heads, dim_k, dim_v)
-        self.norm1 = nn.LayerNorm(embed_size)
-        self.norm2 = nn.LayerNorm(embed_size)
-        self.feed_forward = nn.Sequential(
-            nn.Linear(embed_size, forward_expansion * embed_size),
-            nn.ReLU(),
-            nn.Linear(forward_expansion * embed_size, embed_size),
-        )
-        self.dropout = nn.Dropout(dropout)
-        self.to(device)
-
-    def forward(self, batch_size, x, mask):
-        attention = self.attention(batch_size, x, x, x, mask)
-        x = self.dropout(self.norm1(attention + x))
-        feed_forward = self.feed_forward(x)
-        out = self.dropout(self.norm2(feed_forward + x))
         return out
 
 class TransformerDecoderLayer(nn.Module):
@@ -135,17 +130,18 @@ class TransformerDecoderLayer(nn.Module):
         return out
 
 
-class Transformer(nn.Module):
+class TransformerDecoder(nn.Module):
     def __init__(self, embed_size, encoding_size, heads, dim_k, dim_v, sequence_length, predict_length, num_layers, dropout, device):
-        super(Transformer, self).__init__()
+        super(TransformerDecoder, self).__init__()
         self.to(device)
         self.sequence_length = sequence_length
         self.predict_length = predict_length
         self.embed_size = embed_size
         self.encoding_size = encoding_size
-        self.expansion = TransformerExpansion(embed_size = self.embed_size, expansion_size = self.encoding_size)
+        self.encoding = TransformerEncoder(embed_size = self.embed_size + 1, expansion_size = self.encoding_size)
         self.positional_encoding = PositionalEncoding(D = self.embed_size, dropout = dropout, N = 144)
-        self.Decoderlayers = nn.ModuleList(
+        self.additive_positional_encoding = Additive_PositionalEncoding(D = self.embed_size, N = 144)
+        self.layers = nn.ModuleList(
             [
                 TransformerDecoderLayer(
                     self.encoding_size,
@@ -158,57 +154,39 @@ class Transformer(nn.Module):
                 for _ in range(num_layers)
             ]
         )
-        self.Encoderlayers = nn.ModuleList(
-            [
-                TransformerEncoderLayer(
-                    self.encoding_size, # 64 = 8*8
-                    heads,
-                    dim_k,
-                    dim_v,
-                    dropout,
-                    device
-                )
-                for _ in range(num_layers)
-            ]
-        )
 
         self.linear = nn.Linear(sequence_length, predict_length)
-        self.de_expansion = TransformerExpansion(embed_size = self.encoding_size, expansion_size = self.embed_size)
+        self.decoding = TransformerEncoder(embed_size = self.encoding_size, expansion_size = self.embed_size)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, batch_size, x, future_mask, status = 'train'):
         if status == 'train':
 
-            x = self.positional_encoding(x)
-            x = self.expansion(x)
+            # when use traditional positional encoding only
+            # x = self.positional_encoding(x)
 
-            enc_out = x
-            dec_out = x
+            # when use additive positional encoding only
+            x = self.additive_positional_encoding(x)
 
-            for layer in self.Encoderlayers:
-                enc_out = layer (batch_size, enc_out, None)
+            # when use hybrid positional encoding
+            # x = self.positional_encoding(x)
+            # x = self.additive_positional_encoding(x)
+            x = self.encoding(x)
+            out = x
 
-            for layer in self.Decoderlayers:
-                dec_out = layer (batch_size, enc_out, dec_out, future_mask)  # (b, n, d)
+            for layer in self.layers:
+                out = layer (batch_size, x, out, future_mask)  # (b, n, d)
 
 
-            out = self.de_expansion(dec_out) # （b, n, d）-> (b, n, D)
+            out = self.decoding(out) # （b, n, d）-> (b, n, D)
 
         else:
-            x = self.positional_encoding(x)
-            x = self.expansion(x)
-
-            enc_out = x
-            dec_out = x
-
-            for layer in self.Encoderlayers:
-                enc_out = layer (batch_size, enc_out, None)
-
-            for layer in self.Decoderlayers:
-                dec_out = layer (batch_size, enc_out, dec_out, future_mask)  # (b, n, d)
-
-
-            out = self.de_expansion(dec_out) # （b, n, d）-> (b, n, D)
+            x = self.positional_encoding(x) # (b, n, d)
+            x = self.encoding(x)
+            out = x
+            for layer in self.layers:
+                out = layer (batch_size, x, out, future_mask) # (b, n, d)
+            out = self.decoding(out)
 
         return out
 
