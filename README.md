@@ -14,3 +14,9 @@ Instructions:
    ```cd scripts```
 
    ```python train.py```
+5. If your environment is not compatible with the current version of the code, please install the required packages by running the following command.
+
+   ```pip install -r requirements.txt```
+6. To avoid the error related to unrecognized CDR path, please locate to the root folder and install the package through:
+
+   ```pip install -e .```
