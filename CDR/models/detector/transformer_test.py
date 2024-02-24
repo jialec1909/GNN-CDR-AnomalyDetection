@@ -160,7 +160,7 @@ class TransformerDecoder(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, batch_size, x, future_mask, status = 'train'):
-        if status == 'train':
+        if status == 'train' or status == 'predict':
 
             # when use traditional positional encoding only
             # x = self.positional_encoding(x)
@@ -179,14 +179,6 @@ class TransformerDecoder(nn.Module):
 
 
             out = self.decoding(out) # （b, n, d）-> (b, n, D)
-
-        else:
-            x = self.positional_encoding(x) # (b, n, d)
-            x = self.encoding(x)
-            out = x
-            for layer in self.layers:
-                out = layer (batch_size, x, out, future_mask) # (b, n, d)
-            out = self.decoding(out)
 
         return out
 
