@@ -38,18 +38,18 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # parser.add_argument('--train', type = bool, default = True)
     # parser.add_argument('--predict', type = bool, default = False)
-    parser.add_argument('--epochs', type = int, default = 150)
+    parser.add_argument('--epochs', type = int, default = 500)
     parser.add_argument('--batch_size', type = int, default = 32)
     parser.add_argument('--sequence_length', type = int, default = 6)
     parser.add_argument('--predict_length', type = int, default = 1)
     parser.add_argument('--learning_rate', type = float, default = 0.005)
-    parser.add_argument('--train_size_factor', type = float, default = 0.8)
+    parser.add_argument('--train_size_factor', type = float, default = 0.999)
     # parser.add_argument('--test_size_factor', type = float, default = 0.001)
     parser.add_argument('--num_layers', type = int, default = 6)
     parser.add_argument('--heads', type = int, default = 8)
     parser.add_argument('--dim_k', type = int, default = 8)
     parser.add_argument('--dim_v', type = int, default = 8)
-    parser.add_argument('--dropout', type = float, default = 0.01)
+    parser.add_argument('--dropout', type = float, default = 0.001)
     parser.add_argument('--encoder_size', type = int, default = 64)
     parser.add_argument('--if_write', type = bool, default = True)
     opt = parser.parse_args()
@@ -91,6 +91,12 @@ class CellDataset(Dataset):
         return input_batch_tensor, cell_id
 
 
+def lambda_lr(step_num, d_model, warmup_steps=5000):
+    return np.power(d_model, -0.5) * np.min([
+        np.power(step_num, -0.5),
+        step_num * np.power(warmup_steps, -1.5)])
+
+
 def collate_fn(batch):
     x, cell_idx = zip(*batch)
     x_batch = torch.stack(x)
@@ -129,7 +135,7 @@ def tensors_to_csv(tensor1, tensor2, output_dir, cell_id, reshape_dim = (143, 5)
     plt.savefig (image_file_path)
     plt.close()
 
-def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion, epochs, batch_size, train_size, test_size, learning_rate,
+def train_model(train_dataloader, test_dataloader, decoder, optimizer, scheduler, criterion, epochs, batch_size, train_size, test_size, learning_rate,
                 num_layers, heads, dim_k, dim_v, dropout, encoder_size, device, if_write ,sequence_length = 6, predict_length = 1):
     wandb.init(
         project = "Transformer_CDR",
@@ -140,7 +146,8 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion
             "Train_size": train_size,
             "Test_size": test_size,
             "epochs": epochs,
-            "optimizer": "Adam",
+            "optimizer": optimizer,
+            "scheduler": scheduler,
             "batch_size": batch_size,
             "num_layers": num_layers,
             "heads": heads,
@@ -179,6 +186,7 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion
             epoch_loss += loss.item()
             loss.backward()
             optimizer.step()
+            scheduler.step()
             wandb.log({'batch': batch_num, 'batch loss': loss.item(), 't': step})
         avg_batch_loss = epoch_loss / len(train_dataloader)
         wandb.log({'epoch': epoch, 'Average epoch loss': avg_batch_loss})
@@ -233,8 +241,9 @@ def main():
                                              num_layers = num_layers, dropout = dropout, device = device)
     decoder.to(device)
 
-    optimizer = optim.Adam(decoder.parameters(), lr = learning_rate)
-
+    # optimizer = optim.Adam(decoder.parameters(), lr = learning_rate)
+    optimizer = torch.optim.Adam (decoder.parameters (), lr = 0, betas = (0.9, 0.98), eps = 1e-9)
+    scheduler = torch.optim.lr_scheduler.LambdaLR (optimizer, lr_lambda = lambda step_num: lambda_lr (step_num, encoder_size, 5000))
     # for datasets in datasets_list:
 
     selected_dataset_index = 0
@@ -262,7 +271,7 @@ def main():
     # # -------------------------------- Train --------------------------------------------------
     # # -----------------------------------------------------------------------------------------
     print(f'---------------------------Training dataset: {dataset}-------------------------------------')
-    train_model(train_loader, test_loader, decoder, optimizer, criterion, epochs = epochs, batch_size = batch_size,
+    train_model(train_loader, test_loader, decoder, optimizer, scheduler, criterion, epochs = epochs, batch_size = batch_size,
                     train_size = train_size_factor, test_size = test_size_factor, learning_rate = learning_rate,
                     num_layers = num_layers, heads = heads, dim_k = dim_k, dim_v = dim_v, dropout = dropout,
                     encoder_size = encoder_size, device = device, if_write = if_write, sequence_length = sequence_length, predict_length = predict_length)
