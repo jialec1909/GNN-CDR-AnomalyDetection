@@ -52,6 +52,7 @@ def parse_args():
     parser.add_argument('--dropout', type = float, default = 0.01)
     parser.add_argument('--encoder_size', type = int, default = 64)
     parser.add_argument('--if_write', type = bool, default = True)
+    parser.add_argument('--pe', type = str, default = 'hybrid_sine')
     opt = parser.parse_args()
     return opt
 
@@ -130,7 +131,7 @@ def tensors_to_csv(tensor1, tensor2, output_dir, cell_id, reshape_dim = (143, 5)
     plt.close()
 
 def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion, epochs, batch_size, train_size, test_size, learning_rate,
-                num_layers, heads, dim_k, dim_v, dropout, encoder_size, device, if_write ,sequence_length = 6, predict_length = 1):
+                num_layers, heads, dim_k, dim_v, dropout, encoder_size, device, if_write, pe, sequence_length = 6, predict_length = 1):
     wandb.init(
         project = "Transformer_CDR",
         config = {
@@ -150,7 +151,8 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion
             "sequence_length": sequence_length,
             "predict_length": predict_length,
             "encoder_size": encoder_size,
-            "criterion": "MSELoss", }
+            "criterion": "MSELoss",
+            "PE": pe}
     )
     wandb.watch(decoder)
     step = 0
@@ -170,7 +172,7 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion
             input_mask = future_mask(input.shape[1]).unsqueeze(0).to(device)
 
             optimizer.zero_grad()
-            out = decoder(batch_size = num_cells, x = input, future_mask = input_mask, status = 'train')
+            out = decoder(batch_size = num_cells, x = input, future_mask = input_mask, pe = pe, status = 'train')
             out_loss = out[:, :-1, :]
             label_loss = input[:, 1:, :]
 
@@ -196,7 +198,7 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion
 
         for id, cell in enumerate(cell_idx):
             input = x_batch[id].unsqueeze(0).to(device)
-            out = decoder(batch_size = 1, x = input, future_mask = input_mask, status = 'predict')
+            out = decoder(batch_size = 1, x = input, future_mask = input_mask, pe = pe, status = 'predict')
             out_loss = out[:, :-1, :]
             label_loss = label[id]
             if if_write:
@@ -225,6 +227,7 @@ def main():
     epochs = opt.epochs
     encoder_size = opt.encoder_size
     if_write = opt.if_write
+    pe = opt.pe
 
 
     decoder = transformer_test.TransformerDecoder(embed_size = 5 , encoding_size = encoder_size, heads = heads, dim_k = dim_k, dim_v = dim_v,
@@ -265,7 +268,7 @@ def main():
     train_model(train_loader, test_loader, decoder, optimizer, criterion, epochs = epochs, batch_size = batch_size,
                     train_size = train_size_factor, test_size = test_size_factor, learning_rate = learning_rate,
                     num_layers = num_layers, heads = heads, dim_k = dim_k, dim_v = dim_v, dropout = dropout,
-                    encoder_size = encoder_size, device = device, if_write = if_write, sequence_length = sequence_length, predict_length = predict_length)
+                    encoder_size = encoder_size, device = device, if_write = if_write, pe = pe, sequence_length = sequence_length, predict_length = predict_length)
 
 
     return

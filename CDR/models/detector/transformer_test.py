@@ -49,6 +49,19 @@ class Additive_PositionalEncoding(nn.Module):
         X = torch.cat ((X, PE), dim = 2)  # (b, 144, D+1)
         return X
 
+class Additive_PositionalEncoding_sine(nn.Module):
+    def __init__(self, D = 5, N = 144):
+        super(Additive_PositionalEncoding_sine, self).__init__()
+        position = torch.arange(0, N, dtype=torch.float32).unsqueeze(1) # (N, 1)
+        self.pe = torch.sin(2 * torch.pi * position / N) / torch.max(position)
+        self.D = D
+
+    def forward(self, X): # X: (b, n, D)
+        PE_expanded = self.pe.expand (-1, X.shape[0]).unsqueeze (2).transpose (0, 1)
+        PE = PE_expanded.to (X.device)
+        X = torch.cat ((X, PE), dim = 2)  # (b, 144, D+1)
+        return X
+
 
 class MultiHeadAttention(nn.Module):
     def __init__(self, dimension_emb, heads, dim_k, dim_v):
@@ -138,9 +151,11 @@ class TransformerDecoder(nn.Module):
         self.predict_length = predict_length
         self.embed_size = embed_size
         self.encoding_size = encoding_size
-        self.encoding = TransformerEncoder(embed_size = self.embed_size + 1, expansion_size = self.encoding_size)
+        self.encoding_addi = TransformerEncoder(embed_size = self.embed_size + 1, expansion_size = self.encoding_size)
+        self.encoding_orig = TransformerEncoder(embed_size = self.embed_size, expansion_size = self.encoding_size)
         self.positional_encoding = PositionalEncoding(D = self.embed_size, dropout = dropout, N = 144)
         self.additive_positional_encoding = Additive_PositionalEncoding(D = self.embed_size, N = 144)
+        self.additive_positional_encoding_sine = Additive_PositionalEncoding_sine(D = self.embed_size, N = 144)
         self.layers = nn.ModuleList(
             [
                 TransformerDecoderLayer(
@@ -159,19 +174,39 @@ class TransformerDecoder(nn.Module):
         self.decoding = TransformerEncoder(embed_size = self.encoding_size, expansion_size = self.embed_size)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, batch_size, x, future_mask, status = 'train'):
+    def forward(self, batch_size, x, future_mask, pe, status = 'train'):
         if status == 'train' or status == 'predict':
 
             # when use traditional positional encoding only
+            if pe == 'orginal':
+                x = self.positional_encoding(x)
+                x = self.encoding_orig(x)
             # x = self.positional_encoding(x)
 
             # when use additive positional encoding only
-            x = self.additive_positional_encoding(x)
+            elif pe == 'addi_affine':
+                x = self.additive_positional_encoding(x)
+                x = self.encoding_addi(x)
+
+            # when use additive positional encoding with sine
+            elif pe == 'addi_sine':
+                x = self.additive_positional_encoding_sine(x)
+                x = self.encoding_addi(x)
 
             # when use hybrid positional encoding
+            # when affine：
+            elif pe == 'hybrid_affine':
+                x = self.positional_encoding(x)
+                x = self.additive_positional_encoding (x)
+                x = self.encoding_addi(x)
+            # when sine:
+            else:
+                x = self.positional_encoding(x)
+                x = self.additive_positional_encoding_sine (x)
+                x = self.encoding_addi(x)
             # x = self.positional_encoding(x)
             # x = self.additive_positional_encoding(x)
-            x = self.encoding(x)
+            # x = self.encoding(x)
             out = x
 
             for layer in self.layers:
