@@ -188,6 +188,8 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion
 
     print(f'---------------------------Training ends for the batch-------------------------------------')
     print(f'---------------------------Testing prediction begins-------------------------------------')
+    test_batch_num = 0
+
     for batch in test_dataloader:
         cell_idx = batch[1]
         x_batch = batch[0]
@@ -196,6 +198,7 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion
         print(f'Cells at the batch: {cell_idx.tolist()}')
         input_mask = future_mask (x_batch.shape[1]).unsqueeze (0).to (device)
 
+        test_batch_loss = 0.0
         for id, cell in enumerate(cell_idx):
             input = x_batch[id].unsqueeze(0).to(device)
             out = decoder(batch_size = 1, x = input, future_mask = input_mask, pe = pe, status = 'predict')
@@ -203,9 +206,13 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, criterion
             label_loss = label[id]
             if if_write:
                 tensors_to_csv(out_loss, label_loss, output_dir = new_run_dir, cell_id = cell)
+            loss = criterion(out_loss, label_loss)
 
+            test_batch_loss += loss.item ()
+        test_batch_num += 1
 
-            wandb.log({'cell_id': cell, 'prediction': out, 'target': label})
+            #wandb.log({'cell_id': cell, 'prediction': out, 'target': label})
+        wandb.log ({"Test Loss": test_batch_loss / test_batch_num, 'Test Batch': test_batch_num})
 
     wandb.finish()
 
