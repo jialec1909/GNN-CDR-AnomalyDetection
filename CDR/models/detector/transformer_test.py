@@ -200,13 +200,17 @@ class TransformerDecoder(nn.Module):
                 x = self.additive_positional_encoding (x)
                 x = self.encoding_addi(x)
             # when sine:
-            else:
+            elif pe == 'hybrid_sine':
                 x = self.positional_encoding(x)
                 x = self.additive_positional_encoding_sine (x)
                 x = self.encoding_addi(x)
             # x = self.positional_encoding(x)
             # x = self.additive_positional_encoding(x)
             # x = self.encoding(x)
+
+            else:
+                raise ValueError('Invalid positional encoding type')
+
             out = x
 
             for layer in self.layers:
