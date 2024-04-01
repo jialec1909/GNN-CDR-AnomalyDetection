@@ -49,7 +49,7 @@ def parse_args():
     parser.add_argument('--heads', type = int, default = 8)
     parser.add_argument('--dim_k', type = int, default = 8)
     parser.add_argument('--dim_v', type = int, default = 8)
-    parser.add_argument('--dropout', type = float, default = 0.001)
+    parser.add_argument('--dropout', type = float, default = 0.0)
     parser.add_argument('--encoder_size', type = int, default = 64)
     parser.add_argument('--if_write', type = bool, default = True)
     opt = parser.parse_args()
@@ -219,7 +219,7 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, scheduler
         test_batch_num += 1
         test_total_loss += test_batch_loss
 
-        wandb.log({'Test Loss': test_batch_loss/test_num_cells, 'prediction': out, 'target': label})
+        wandb.log({'Test Loss': test_batch_loss/test_num_cells, 'Test Batch': test_batch_num})
     wandb.log({'Average Test Loss': test_total_loss/test_batch_num})
 
     wandb.finish()

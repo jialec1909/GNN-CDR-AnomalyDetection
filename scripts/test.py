@@ -43,13 +43,13 @@ def parse_args():
     parser.add_argument('--sequence_length', type = int, default = 6)
     parser.add_argument('--predict_length', type = int, default = 1)
     parser.add_argument('--learning_rate', type = float, default = 0.005)
-    parser.add_argument('--train_size_factor', type = float, default = 0.999)
+    parser.add_argument('--train_size_factor', type = float, default = 0.995)
     # parser.add_argument('--test_size_factor', type = float, default = 0.001)
     parser.add_argument('--num_layers', type = int, default = 6)
     parser.add_argument('--heads', type = int, default = 8)
     parser.add_argument('--dim_k', type = int, default = 8)
     parser.add_argument('--dim_v', type = int, default = 8)
-    parser.add_argument('--dropout', type = float, default = 0.001)
+    parser.add_argument('--dropout', type = float, default = 0.0)
     parser.add_argument('--encoder_size', type = int, default = 64)
     parser.add_argument('--if_write', type = bool, default = True)
     parser.add_argument('--pe', type = str, default = 'hybrid_sine')
@@ -196,7 +196,7 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, scheduler
     print(f'---------------------------Training ends for the batch-------------------------------------')
     print(f'---------------------------Testing prediction begins-------------------------------------')
     test_batch_num = 0
-
+    test_total_loss = 0.0
     for batch in test_dataloader:
         cell_idx = batch[1]
         x_batch = batch[0]
@@ -206,6 +206,7 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, scheduler
         input_mask = future_mask (x_batch.shape[1]).unsqueeze (0).to (device)
 
         test_batch_loss = 0.0
+        test_num_cells = len (cell_idx)
         for id, cell in enumerate(cell_idx):
             input = x_batch[id].unsqueeze(0).to(device)
             out = decoder(batch_size = 1, x = input, future_mask = input_mask, pe = pe, status = 'predict')
@@ -217,9 +218,11 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, scheduler
 
             test_batch_loss += loss.item ()
         test_batch_num += 1
+        test_total_loss += test_batch_loss
 
             #wandb.log({'cell_id': cell, 'prediction': out, 'target': label})
-        wandb.log ({"Test Loss": test_batch_loss / test_batch_num, 'Test Batch': test_batch_num})
+        wandb.log ({"Test Loss": test_batch_loss / test_num_cells, 'Test Batch': test_batch_num})
+    wandb.log({'Average Test Loss': test_total_loss/test_batch_num})
 
     wandb.finish()
 
