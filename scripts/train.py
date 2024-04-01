@@ -43,7 +43,7 @@ def parse_args():
     parser.add_argument('--sequence_length', type = int, default = 6)
     parser.add_argument('--predict_length', type = int, default = 1)
     parser.add_argument('--learning_rate', type = float, default = 0.005)
-    parser.add_argument('--train_size_factor', type = float, default = 0.999)
+    parser.add_argument('--train_size_factor', type = float, default = 0.995)
     # parser.add_argument('--test_size_factor', type = float, default = 0.001)
     parser.add_argument('--num_layers', type = int, default = 6)
     parser.add_argument('--heads', type = int, default = 8)
@@ -74,7 +74,7 @@ class CellDataset(Dataset):
         return len(self.cell_ids)  # Each cell contains 144 sequences as input.
 
     def __getitem__(self, cell_id):
-        ## FIXME： determine how to use window
+
         cell_id = self.cell_ids[cell_id]
 
         # input x: (num_cell, 144, 5), whole sequence for the cell i
@@ -194,6 +194,8 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, scheduler
 
     print(f'---------------------------Training ends for the batch-------------------------------------')
     print(f'---------------------------Testing prediction begins-------------------------------------')
+    test_batch_num = 0
+    test_total_loss = 0.0
     for batch in test_dataloader:
         cell_idx = batch[1]
         x_batch = batch[0]
@@ -202,16 +204,23 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, scheduler
         print(f'Cells at the batch: {cell_idx.tolist()}')
         input_mask = future_mask (x_batch.shape[1]).unsqueeze (0).to (device)
 
+        test_batch_loss = 0.0
+        test_num_cells = len(cell_idx)
         for id, cell in enumerate(cell_idx):
             input = x_batch[id].unsqueeze(0).to(device)
             out = decoder(batch_size = 1, x = input, future_mask = input_mask, status = 'predict')
             out_loss = out[:, :-1, :]
             label_loss = label[id]
+            loss = criterion(out_loss, label_loss)
+            test_batch_loss += loss.item()
+
             if if_write:
                 tensors_to_csv(out_loss, label_loss, output_dir = new_run_dir, cell_id = cell)
+        test_batch_num += 1
+        test_total_loss += test_batch_loss
 
-
-            wandb.log({'cell_id': cell, 'prediction': out, 'target': label})
+        wandb.log({'Test Loss': test_batch_loss/test_num_cells, 'prediction': out, 'target': label})
+    wandb.log({'Average Test Loss': test_total_loss/test_batch_num})
 
     wandb.finish()
 
@@ -242,8 +251,8 @@ def main():
     decoder.to(device)
 
     # optimizer = optim.Adam(decoder.parameters(), lr = learning_rate)
-    optimizer = torch.optim.Adam (decoder.parameters (), lr = 0, betas = (0.9, 0.98), eps = 1e-9)
-    scheduler = torch.optim.lr_scheduler.LambdaLR (optimizer, lr_lambda = lambda step_num: lambda_lr (step_num, encoder_size, 5000))
+    optimizer = torch.optim.Adam (decoder.parameters (), lr = 0.07, betas = (0.9, 0.98), eps = 1e-9)
+    scheduler = torch.optim.lr_scheduler.LambdaLR (optimizer, lr_lambda = lambda step_num: lambda_lr (step_num, encoder_size, 7000))
     # for datasets in datasets_list:
 
     selected_dataset_index = 0
