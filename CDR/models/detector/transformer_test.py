@@ -133,13 +133,18 @@ class TransformerDecoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.to(device)
 
-    def forward(self, batch_size, x, last_out, future_mask):
+    def forward(self, batch_size, x, last_out, future_mask, MHA):
 
         attention = self.attention(batch_size, last_out, last_out, last_out, future_mask)
         query = self.dropout(self.norm1(attention + x))
-        attention = self.attention(batch_size, x, x, query, None)
-        attention_out = self.dropout(self.norm2(self.feed_forward(attention) + attention))
-        out = self.norm3(attention_out + self.feed_forward(attention_out))
+        if MHA == 2:
+            attention = self.attention(batch_size, x, x, query, None)
+            attention_out = self.dropout(self.norm2(self.feed_forward(attention) + attention))
+            out = self.norm3(attention_out + self.feed_forward(attention_out))
+        elif MHA == 1:
+            out = self.norm3(query + self.feed_forward(query))
+        else:
+            raise ValueError('Invalid MHA number (help: only masked MHA -- 1, with unmasked MHA -- 2)')
         return out
 
 
@@ -174,7 +179,7 @@ class TransformerDecoder(nn.Module):
         self.decoding = TransformerEncoder(embed_size = self.encoding_size, expansion_size = self.embed_size)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, batch_size, x, future_mask, pe, status = 'train'):
+    def forward(self, batch_size, x, future_mask, pe, MHA, status = 'train'):
         if status == 'train' or status == 'predict':
 
             # when use traditional positional encoding only
@@ -214,7 +219,7 @@ class TransformerDecoder(nn.Module):
             out = x
 
             for layer in self.layers:
-                out = layer (batch_size, x, out, future_mask)  # (b, n, d)
+                out = layer (batch_size, x, out, future_mask, MHA)  # (b, n, d)
 
 
             out = self.decoding(out) # （b, n, d）-> (b, n, D)
