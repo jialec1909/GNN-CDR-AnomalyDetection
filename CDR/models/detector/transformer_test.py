@@ -43,7 +43,7 @@ class PositionalEncoding(nn.Module):
         elif method == 'sine':
             ## TODO: fix the shape of pe_sine
             pe_expand_sine = self.pe_sine.expand(-1, X.shape[0]).unsqueeze(0).to(X.device) # (1, 144, D)
-            X = X + pe_expand_sine.to(X.device)
+            X = X + pe_expand_sine[:, :X.shape[1], :].to(X.device)
         else:
             raise ValueError('Invalid positional encoding type (help: original or sine)')
         return self.dropout(X)
