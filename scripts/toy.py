@@ -216,7 +216,7 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, scheduler
 
             if if_write:
                 tensors_to_csv(out_loss, label_loss, output_dir = new_run_dir, cell_id = cell)
-        test_batch_num += 1
+        test_batch_num += test_num_cells
         test_total_loss += test_batch_loss
 
         wandb.log({'Test Loss': test_batch_loss/test_num_cells, 'Test Batch': test_batch_num})
