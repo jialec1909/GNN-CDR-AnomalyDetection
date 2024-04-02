@@ -11,6 +11,8 @@ class PositionalEncoding(nn.Module):
         # max_len: the maximum length of the incoming sequence (default=6).
         self.dropout = nn.Dropout(p=dropout)
         # Compute the positional encodings once in log space.
+
+        ## case of using original pe:
         pe = torch.zeros(1, N, D)
         # pe: the positional encodings (batch_size, N, D).
         # batch_size=1 means pe works same on all batches.
@@ -28,12 +30,24 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
         # self.pe: the positional encodings (1, N, D).
 
-    def forward(self, X):
-        # x: the input sequence (batch_size, sequence_length, D).
-        X = X + self.pe[:, :X.shape[1], :].to(X.device)
-        # Broadcasting: self.P[:, :X.shape[1], :].to(X.device) (1, X.shape[1], D) -> (batch_size, X.shape[1], D).
+        ## case of using sine wave as original pe:
+        position_sine = torch.arange(0, N, dtype=torch.float32).unsqueeze(1) # (N, 1) content:(0, 1, 2, 3, ..., N-1)
+        self.pe_sine = torch.sin(2 * torch.pi * position_sine / N) / torch.max(position_sine) # (N, 1)
+        # content: (0, sin(2*pi/N), sin(4*pi/N), ..., sin(2*pi*(N-1)/N)), is a sine wave of N points in one period
+
+    def forward(self, X, method):
+        # x: the input sequence (batch_size = num_cells, sequence_length = 144, D = 5).
+        if method == 'original':
+            X = X + self.pe[:, :X.shape[1], :].to(X.device)
+            # Broadcasting: self.pe[:, : 144, :].to(X.device) の shape: (1, 144, D) -> (batch_size, 144, D).
+        elif method == 'sine':
+            ## TODO: fix the shape of pe_sine
+            pe_expand_sine = self.pe_sine.expand(-1, X.shape[0]).unsqueeze(0).to(X.device) # (1, 144, D)
+            X = X + pe_expand_sine.to(X.device)
+        else:
+            raise ValueError('Invalid positional encoding type (help: original or sine)')
         return self.dropout(X)
-        # return: the output sequence (batch_size, sequence_length, D).
+        # return: the output sequence (batch_size = num_cells, sequence_length = 144, D = 5).
 
 
 class Additive_PositionalEncoding(nn.Module):
@@ -52,12 +66,13 @@ class Additive_PositionalEncoding(nn.Module):
 class Additive_PositionalEncoding_sine(nn.Module):
     def __init__(self, D = 5, N = 144):
         super(Additive_PositionalEncoding_sine, self).__init__()
-        position = torch.arange(0, N, dtype=torch.float32).unsqueeze(1) # (N, 1)
-        self.pe = torch.sin(2 * torch.pi * position / N) / torch.max(position)
+        position = torch.arange(0, N, dtype=torch.float32).unsqueeze(1) # (N, 1) content:(0, 1, 2, 3, ..., N-1)
+        self.pe = torch.sin(2 * torch.pi * position / N) / torch.max(position) # (N, 1)
+        # content: (0, sin(2*pi/N), sin(4*pi/N), ..., sin(2*pi*(N-1)/N)), is a sine wave of N points in one period
         self.D = D
 
     def forward(self, X): # X: (b, n, D)
-        PE_expanded = self.pe.expand (-1, X.shape[0]).unsqueeze (2).transpose (0, 1)
+        PE_expanded = self.pe.expand (-1, X.shape[0]).unsqueeze (2).transpose (0, 1) # (b, 144, 1)
         PE = PE_expanded.to (X.device)
         X = torch.cat ((X, PE), dim = 2)  # (b, 144, D+1)
         return X
@@ -179,12 +194,12 @@ class TransformerDecoder(nn.Module):
         self.decoding = TransformerEncoder(embed_size = self.encoding_size, expansion_size = self.embed_size)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, batch_size, x, future_mask, pe, MHA, status = 'train'):
+    def forward(self, batch_size, x, future_mask, pe, MHA, pe_method, status = 'train'):
         if status == 'train' or status == 'predict':
 
             # when use traditional positional encoding only
             if pe == 'orginal':
-                x = self.positional_encoding(x)
+                x = self.positional_encoding(x, pe_method)
                 x = self.encoding_orig(x)
             # x = self.positional_encoding(x)
 
@@ -201,12 +216,12 @@ class TransformerDecoder(nn.Module):
             # when use hybrid positional encoding
             # when affine：
             elif pe == 'hybrid_affine':
-                x = self.positional_encoding(x)
+                x = self.positional_encoding(x, pe_method)
                 x = self.additive_positional_encoding (x)
                 x = self.encoding_addi(x)
             # when sine:
             elif pe == 'hybrid_sine':
-                x = self.positional_encoding(x)
+                x = self.positional_encoding(x, pe_method)
                 x = self.additive_positional_encoding_sine (x)
                 x = self.encoding_addi(x)
             # x = self.positional_encoding(x)
