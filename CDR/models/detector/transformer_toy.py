@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
+# Elementwise value additive PE : original or sine
 class PositionalEncoding(nn.Module):
     def __init__(self, D, dropout=0.0, N = 144):
         super(PositionalEncoding, self).__init__()
@@ -11,6 +11,8 @@ class PositionalEncoding(nn.Module):
         # max_len: the maximum length of the incoming sequence (default=6).
         self.dropout = nn.Dropout(p=dropout)
         # Compute the positional encodings once in log space.
+
+        ## case of using original pe:
         pe = torch.zeros(1, N, D)
         # pe: the positional encodings (batch_size, N, D).
         # batch_size=1 means pe works same on all batches.
@@ -28,12 +30,70 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
         # self.pe: the positional encodings (1, N, D).
 
-    def forward(self, X):
-        # x: the input sequence (batch_size, sequence_length, D).
-        X = X + self.pe[:, :X.shape[1], :].to(X.device)
-        # Broadcasting: self.P[:, :X.shape[1], :].to(X.device) (1, X.shape[1], D) -> (batch_size, X.shape[1], D).
+        ## case of using sine wave as original pe:
+        position_sine = torch.arange(0, N, dtype=torch.float32).unsqueeze(1) # (N, 1) content:(0, 1, 2, 3, ..., N-1)
+        self.pe_sine = torch.sin(2 * torch.pi * position_sine / N) / torch.max(position_sine) # (N, 1)
+        # content: (0, sin(2*pi/N), sin(4*pi/N), ..., sin(2*pi*(N-1)/N)), is a sine wave of N points in one period
+
+    def forward(self, X, method):
+        # x: the input sequence (batch_size = num_cells, sequence_length = 144, D = 5).
+        if method == 'original':
+            X = X + self.pe[:, :X.shape[1], :].to(X.device)
+            # Broadcasting: self.pe[:, : 144, :].to(X.device) の shape: (1, 144, D) -> (batch_size, 144, D).
+        elif method == 'sine':
+            ## TODO: fix the shape of pe_sine
+            pe_expand_sine = self.pe_sine.expand(-1, X.shape[2]).unsqueeze(0).to(X.device) 
+            # pe_expand_sine -> (1, 144, D)
+            # X.shape -> (b, 144, D)
+            X = X + pe_expand_sine
+        else:
+            raise ValueError('Invalid positional encoding type (help: original or sine)')
         return self.dropout(X)
-        # return: the output sequence (batch_size, sequence_length, D).
+        # return: the output sequence (batch_size = num_cells, sequence_length = 144, D = 5).
+
+# dimensional_addi_pe_affine
+class Additive_PositionalEncoding(nn.Module):
+    def __init__(self, D = 5, N = 144):
+        super(Additive_PositionalEncoding, self).__init__()
+        pe = torch.arange(0, N, dtype=torch.float32).unsqueeze(1) # (N, 1)
+        self.pe = pe / torch.max(pe)
+        self.D = D
+
+    def forward(self, X): # X: (b, n, D)
+        PE_expanded = self.pe.expand (-1, X.shape[0]).unsqueeze (2).transpose (0, 1)
+        PE = PE_expanded.to (X.device)
+        X = torch.cat ((X, PE), dim = 2)  # (b, 144, D+1)
+        return X
+
+# dimensional_addi_pe_sine
+class Additive_PositionalEncoding_sine(nn.Module):
+    def __init__(self, D = 5, N = 144):
+        super(Additive_PositionalEncoding_sine, self).__init__()
+        position = torch.arange(0, N, dtype=torch.float32).unsqueeze(1) # (N, 1) content:(0, 1, 2, 3, ..., N-1)
+        self.pe = torch.sin(2 * torch.pi * position / N) / torch.max(position) # (N, 1)
+        # content: (0, sin(2*pi/N), sin(4*pi/N), ..., sin(2*pi*(N-1)/N)), is a sine wave of N points in one period
+        self.D = D
+
+    def forward(self, X): # X: (b, n, D)
+        PE_expanded = self.pe.expand (-1, X.shape[0]).unsqueeze (2).transpose (0, 1) # (b, 144, 1)
+        PE = PE_expanded.to (X.device)
+        X = torch.cat ((X, PE), dim = 2)  # (b, 144, D+1)
+        return X
+
+
+class DefinedNorm(nn.Module):
+    def __init__(self, num_features, C=1.0, b=0.0):
+        super(DefinedNorm, self).__init__()
+        self.C = nn.Parameter(torch.Tensor([C]))
+        self.b = nn.Parameter(torch.Tensor([b]))
+        self.num_features = num_features
+
+    def forward(self, x):
+        mean = x.mean(dim=-1, keepdim=True)
+        std = x.std(dim=-1, keepdim=True, unbiased=False)
+        return self.C * torch.tanh((x - mean) / (std + 1e-5) / self.C) + self.b
+
+
 
 class MultiHeadAttention(nn.Module):
     def __init__(self, dimension_emb, heads, dim_k, dim_v):
@@ -61,7 +121,7 @@ class MultiHeadAttention(nn.Module):
         # with every other training example --> similarity between Q and K
         keys_T = keys.permute(0, 1, 3, 2)  # keys_T = keys transpose to (b, h, d_k, n)
         scores = torch.einsum("bhnk,bhkm->bhnm", [queries, keys_T])
-        ## FIXME: fix mask shape
+
         if mask is not None:
             mask = mask.unsqueeze (1)  # (b, 1, n, n)
             expanded_mask = mask.expand (batch_size, self.h, -1, -1)  # (b, h, n, n)
@@ -84,17 +144,26 @@ class TransformerEncoder(nn.Module):
         self.linear = nn.Linear(self.embed_size, self.expansion_size)
 
     def forward(self, x):
+        self.linear.to(x.dtype)
         out = self.linear(x)
         return out
 
 class TransformerDecoderLayer(nn.Module):
-    def __init__(self, embed_size, heads, dim_k, dim_v, dropout, device, forward_expansion = 32):
+    def __init__(self, embed_size, heads, dim_k, dim_v, dropout, device, norm, C, b, forward_expansion = 32):
         super(TransformerDecoderLayer, self).__init__()
         self.attention = MultiHeadAttention(embed_size, heads, dim_k, dim_v)
-        self.norm1 = nn.LayerNorm(embed_size)
-        self.norm2 = nn.LayerNorm(embed_size)
-        self.norm3 = nn.LayerNorm(embed_size)
-
+        if norm == 'layernorm':
+            self.norm1 = nn.LayerNorm(embed_size)
+            self.norm2 = nn.LayerNorm(embed_size)
+            self.norm3 = nn.LayerNorm(embed_size)
+        elif norm == 'tanh':
+            self.norm1 = DefinedNorm(embed_size, C, b)
+            self.norm2 = DefinedNorm(embed_size, C, b)
+            self.norm3 = DefinedNorm(embed_size, C, b)
+        else:
+            raise ValueError('Invalid norm type (help: layernorm or tanh)')
+        
+        
         self.feed_forward = nn.Sequential(
             nn.Linear(embed_size, forward_expansion * embed_size),
             nn.ReLU(),
@@ -104,27 +173,34 @@ class TransformerDecoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.to(device)
 
-    def forward(self, batch_size, x, last_out, future_mask):
+    def forward(self, batch_size, x, last_out, future_mask, MHA):
 
         attention = self.attention(batch_size, last_out, last_out, last_out, future_mask)
         query = self.dropout(self.norm1(attention + x))
-        # attention = self.attention(batch_size, x, x, query, None)
-        # attention_out = self.dropout(self.norm2(self.feed_forward(attention) + attention))
-        # out = self.norm3(attention_out + self.feed_forward(attention_out))
-        out = self.norm3(query + self.feed_forward(query))
+        if MHA == 2:
+            attention = self.attention(batch_size, x, x, query, None)
+            attention_out = self.dropout(self.norm2(self.feed_forward(attention) + attention))
+            out = self.norm3(attention_out + self.feed_forward(attention_out))
+        elif MHA == 1:
+            out = self.norm3(query + self.feed_forward(query))
+        else:
+            raise ValueError('Invalid MHA number (help: only masked MHA -- 1, with unmasked MHA -- 2)')
         return out
 
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, embed_size, encoding_size, heads, dim_k, dim_v, sequence_length, predict_length, num_layers, dropout, device):
+    def __init__(self, embed_size, encoding_size, heads, dim_k, dim_v, sequence_length, predict_length, num_layers, dropout, device, norm, C, b):
         super(TransformerDecoder, self).__init__()
         self.to(device)
         self.sequence_length = sequence_length
         self.predict_length = predict_length
         self.embed_size = embed_size
         self.encoding_size = encoding_size
-        self.encoding = TransformerEncoder(embed_size = self.embed_size, expansion_size = self.encoding_size)
+        self.encoding_addi = TransformerEncoder(embed_size = self.embed_size + 1, expansion_size = self.encoding_size)
+        self.encoding_orig = TransformerEncoder(embed_size = self.embed_size, expansion_size = self.encoding_size)
         self.positional_encoding = PositionalEncoding(D = self.embed_size, dropout = dropout, N = 144)
+        self.additive_positional_encoding = Additive_PositionalEncoding(D = self.embed_size, N = 144)
+        self.additive_positional_encoding_sine = Additive_PositionalEncoding_sine(D = self.embed_size, N = 144)
         self.layers = nn.ModuleList(
             [
                 TransformerDecoderLayer(
@@ -133,7 +209,10 @@ class TransformerDecoder(nn.Module):
                     dim_k,
                     dim_v,
                     dropout,
-                    device
+                    device,
+                    norm,
+                    C,
+                    b
                 )
                 for _ in range(num_layers)
             ]
@@ -143,26 +222,51 @@ class TransformerDecoder(nn.Module):
         self.decoding = TransformerEncoder(embed_size = self.encoding_size, expansion_size = self.embed_size)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, batch_size, x, future_mask, status = 'train'):
-        if status == 'train':
+    def forward(self, batch_size, x, future_mask, pe, MHA, pe_method, status = 'train'):
+        if status == 'train' or status == 'predict':
 
-            x = self.positional_encoding(x)
-            x = self.encoding(x)
+            # when use traditional positional encoding only
+            if pe == 'original':
+                # possible to choose original/sine for value additive PE only.
+                x = self.positional_encoding(x, pe_method)
+                x = self.encoding_orig(x)
+            # x = self.positional_encoding(x)
+
+            # when use additive dimensional positional encoding only
+            elif pe == 'addi_affine':
+                x = self.additive_positional_encoding(x)
+                x = self.encoding_addi(x)
+
+            # when use additive dimensional positional encoding with sine
+            elif pe == 'addi_sine':
+                x = self.additive_positional_encoding_sine(x)
+                x = self.encoding_addi(x)
+
+            # when use hybrid positional encoding
+            # when affine：
+            elif pe == 'hybrid_affine':
+                x = self.positional_encoding(x, pe_method)
+                x = self.additive_positional_encoding (x)
+                x = self.encoding_addi(x)
+            # when sine:
+            elif pe == 'hybrid_sine':
+                x = self.positional_encoding(x, pe_method)
+                x = self.additive_positional_encoding_sine (x)
+                x = self.encoding_addi(x)
+            # x = self.positional_encoding(x)
+            # x = self.additive_positional_encoding(x)
+            # x = self.encoding(x)
+
+            else:
+                raise ValueError('Invalid positional encoding type')
+
             out = x
 
             for layer in self.layers:
-                out = layer (batch_size, x, out, future_mask)  # (b, n, d)
+                out = layer (batch_size, x, out, future_mask, MHA)  # (b, n, d)
 
 
             out = self.decoding(out) # （b, n, d）-> (b, n, D)
-
-        else:
-            x = self.positional_encoding(x) # (b, n, d)
-            x = self.encoding(x)
-            out = x
-            for layer in self.layers:
-                out = layer (batch_size, x, out, future_mask) # (b, n, d)
-            out = self.decoding(out)
 
         return out
 

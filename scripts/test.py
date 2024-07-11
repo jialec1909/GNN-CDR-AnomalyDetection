@@ -11,6 +11,7 @@ import wandb
 import argparse
 import matplotlib.pyplot as plt
 import CDR
+import random
 
 CDR_path = CDR.__path__[0]
 data_folder = f'{CDR_path}/../datasets/merged_datasets/merged_trans'
@@ -38,12 +39,12 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # parser.add_argument('--train', type = bool, default = True)
     # parser.add_argument('--predict', type = bool, default = False)
-    parser.add_argument('--epochs', type = int, default = 500)
+    parser.add_argument('--epochs', type = int, default = 700)
     parser.add_argument('--batch_size', type = int, default = 32)
     parser.add_argument('--sequence_length', type = int, default = 6)
     parser.add_argument('--predict_length', type = int, default = 1)
-    parser.add_argument('--learning_rate', type = float, default = 0.005)
-    parser.add_argument('--train_size_factor', type = float, default = 0.995)
+    parser.add_argument('--initial_lr', type = float, default = 2)
+    parser.add_argument('--train_size_factor', type = float, default = 0.999)
     # parser.add_argument('--test_size_factor', type = float, default = 0.001)
     parser.add_argument('--num_layers', type = int, default = 6)
     parser.add_argument('--heads', type = int, default = 8)
@@ -197,38 +198,44 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, scheduler
         wandb.log({'epoch': epoch, 'Average epoch loss': avg_batch_loss})
         print(f'---------Epoch: {epoch}------, average loss of the dataset: {avg_batch_loss}------')
 
-    print(f'---------------------------Training ends for the batch-------------------------------------')
-    print(f'---------------------------Testing prediction begins-------------------------------------')
-    test_batch_num = 0
-    test_batch_step = 0
-    test_total_loss = 0.0
-    for batch in test_dataloader:
-        cell_idx = batch[1]
-        x_batch = batch[0]
-        x_batch = x_batch.view(-1, 144, 5).to(device)
-        label = x_batch[:, 1:, :].to(device)
-        print(f'Cells at the batch: {cell_idx.tolist()}')
-        input_mask = future_mask (x_batch.shape[1]).unsqueeze (0).to (device)
+                ## Test Loss for each 100 epochs of training
+        if (epoch + 1) % 100 == 0:
+            test_step = (epoch + 1) // 100
+            test_batch_num = 0
+            test_batch_step = 0
+            test_total_loss = 0.0
+            for batch in test_dataloader:
+                cell_idx = batch[1]
+                x_batch = batch[0]
+                x_batch = x_batch.view(-1, 144, 5).to(device)
+                label = x_batch[:, 1:, :].to(device)
+                print(f'Cells at the batch: {cell_idx.tolist()}')
+                input_mask = future_mask(x_batch.shape[1]).unsqueeze(0).to(device)
 
-        test_batch_loss = 0.0
-        test_num_cells = len (cell_idx)
-        for id, cell in enumerate(cell_idx):
-            input = x_batch[id].unsqueeze(0).to(device)
-            out = decoder(batch_size = 1, x = input, future_mask = input_mask, pe = pe, MHA = MHA, pe_method = pe_method, status = 'predict')
-            out_loss = out[:, :-1, :]
-            label_loss = label[id]
-            if if_write:
-                tensors_to_csv(out_loss, label_loss, output_dir = new_run_dir, cell_id = cell)
-            loss = criterion(out_loss, label_loss)
+                test_batch_loss = 0.0
+                test_num_cells = len(cell_idx)
+                for id, cell in enumerate(cell_idx):
+                    input = x_batch[id].unsqueeze(0).to(device)
+                    out = decoder(batch_size = 1, x = input, future_mask = input_mask, pe = pe, MHA = MHA, pe_method = pe_method, status = 'predict')
+                    out_loss = out[:, :-1, :]
+                    label_loss = label[id]
+                    if (epoch + 1) == epochs:
+                        if if_write:
+                            tensors_to_csv(out_loss, label_loss, output_dir = new_run_dir, cell_id = cell)
+                    loss = criterion(out_loss, label_loss)
 
-            test_batch_loss += loss.item ()
-        test_batch_num += test_num_cells
-        test_batch_step += 1
-        test_total_loss += test_batch_loss
+                    test_batch_loss += loss.item ()
+                test_batch_num += test_num_cells
+                test_batch_step += 1
+                test_total_loss += test_batch_loss
 
-            #wandb.log({'cell_id': cell, 'prediction': out, 'target': label})
-        wandb.log ({"Test Loss": test_batch_loss / test_num_cells, 'Test Batch': test_batch_step})
-    wandb.log({'Average Test Loss': test_total_loss/test_batch_num})
+                    #wandb.log({'cell_id': cell, 'prediction': out, 'target': label})
+                wandb.log ({"Test Loss": test_batch_loss / test_num_cells})
+            wandb.log({'Average Test Loss': test_total_loss/test_batch_num, 'Test Step': test_step})
+
+
+    print(f'---------------------------Training ends for the dataset-------------------------------------')
+
 
     wandb.finish()
 
@@ -236,7 +243,7 @@ def main():
     # -----------------------------------------------------------------------------------------
     opt = parse_args()
     criterion = nn.MSELoss()
-    learning_rate = opt.learning_rate
+    initial_lr = opt.initial_lr
     batch_size = opt.batch_size
     sequence_length = opt.sequence_length
     predict_length = opt.predict_length
@@ -254,6 +261,10 @@ def main():
     MHA = opt.MHA
     pe_method = opt.pe_method
 
+    np.random.seed(123)
+    torch.manual_seed(123)
+    random.seed(123)
+
 
     decoder = transformer_test.TransformerDecoder(embed_size = 5 , encoding_size = encoder_size, heads = heads, dim_k = dim_k, dim_v = dim_v,
                                              sequence_length = sequence_length,
@@ -262,8 +273,8 @@ def main():
     decoder.to(device)
 
     # optimizer = optim.Adam(decoder.parameters(), lr = learning_rate)
-    optimizer = torch.optim.Adam (decoder.parameters (), lr = 0.07, betas = (0.9, 0.98), eps = 1e-9)
-    scheduler = torch.optim.lr_scheduler.LambdaLR (optimizer, lr_lambda = lambda step_num: lambda_lr (step_num, encoder_size, 7000))
+    optimizer = torch.optim.Adam (decoder.parameters (), lr = initial_lr, betas = (0.9, 0.98), eps = 1e-9)
+    scheduler = torch.optim.lr_scheduler.LambdaLR (optimizer, lr_lambda = lambda step_num: lambda_lr (step_num, encoder_size, 50000))
 
     # for datasets in datasets_list:
 
@@ -293,7 +304,7 @@ def main():
     # # -----------------------------------------------------------------------------------------
     print(f'---------------------------Training dataset: {dataset}-------------------------------------')
     train_model(train_loader, test_loader, decoder, optimizer, scheduler, criterion, epochs = epochs, batch_size = batch_size,
-                    train_size = train_size_factor, test_size = test_size_factor, learning_rate = learning_rate,
+                    train_size = train_size_factor, test_size = test_size_factor, learning_rate = initial_lr,
                     num_layers = num_layers, heads = heads, dim_k = dim_k, dim_v = dim_v, dropout = dropout,
                     encoder_size = encoder_size, device = device, if_write = if_write, pe = pe, MHA = MHA, pe_method = pe_method,
                 sequence_length = sequence_length, predict_length = predict_length)

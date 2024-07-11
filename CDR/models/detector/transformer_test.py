@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
+# Elementwise value additive PE : original or sine
 class PositionalEncoding(nn.Module):
     def __init__(self, D, dropout=0.0, N = 144):
         super(PositionalEncoding, self).__init__()
@@ -42,14 +42,16 @@ class PositionalEncoding(nn.Module):
             # Broadcasting: self.pe[:, : 144, :].to(X.device) の shape: (1, 144, D) -> (batch_size, 144, D).
         elif method == 'sine':
             ## TODO: fix the shape of pe_sine
-            pe_expand_sine = self.pe_sine.expand(-1, X.shape[0]).unsqueeze(0).to(X.device) # (1, 144, D)
-            X = X + pe_expand_sine[:, :X.shape[1], :].to(X.device)
+            pe_expand_sine = self.pe_sine.expand(-1, X.shape[2]).unsqueeze(0).to(X.device) 
+            # pe_expand_sine -> (1, 144, D)
+            # X.shape -> (b, 144, D)
+            X = X + pe_expand_sine
         else:
             raise ValueError('Invalid positional encoding type (help: original or sine)')
         return self.dropout(X)
         # return: the output sequence (batch_size = num_cells, sequence_length = 144, D = 5).
 
-
+# dimensional_addi_pe_affine
 class Additive_PositionalEncoding(nn.Module):
     def __init__(self, D = 5, N = 144):
         super(Additive_PositionalEncoding, self).__init__()
@@ -63,6 +65,7 @@ class Additive_PositionalEncoding(nn.Module):
         X = torch.cat ((X, PE), dim = 2)  # (b, 144, D+1)
         return X
 
+# dimensional_addi_pe_sine
 class Additive_PositionalEncoding_sine(nn.Module):
     def __init__(self, D = 5, N = 144):
         super(Additive_PositionalEncoding_sine, self).__init__()
@@ -198,17 +201,18 @@ class TransformerDecoder(nn.Module):
         if status == 'train' or status == 'predict':
 
             # when use traditional positional encoding only
-            if pe == 'orginal':
+            if pe == 'original':
+                # possible to choose original/sine for value additive PE only.
                 x = self.positional_encoding(x, pe_method)
                 x = self.encoding_orig(x)
             # x = self.positional_encoding(x)
 
-            # when use additive positional encoding only
+            # when use additive dimensional positional encoding only
             elif pe == 'addi_affine':
                 x = self.additive_positional_encoding(x)
                 x = self.encoding_addi(x)
 
-            # when use additive positional encoding with sine
+            # when use additive dimensional positional encoding with sine
             elif pe == 'addi_sine':
                 x = self.additive_positional_encoding_sine(x)
                 x = self.encoding_addi(x)
