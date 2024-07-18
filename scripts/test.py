@@ -4,14 +4,16 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import pandas as pd
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, random_split, TensorDataset
 import CDR.utils.functional as functional
+import CDR.utils.gen_outliers as gen_outliers
 from CDR.models.detector import transformer_test
 import wandb
 import argparse
 import matplotlib.pyplot as plt
 import CDR
 import random
+from sklearn.metrics import roc_auc_score
 
 CDR_path = CDR.__path__[0]
 data_folder = f'{CDR_path}/../datasets/merged_datasets/merged_trans'
@@ -43,8 +45,8 @@ def parse_args():
     parser.add_argument('--batch_size', type = int, default = 32)
     parser.add_argument('--sequence_length', type = int, default = 6)
     parser.add_argument('--predict_length', type = int, default = 1)
-    parser.add_argument('--initial_lr', type = float, default = 2)
-    parser.add_argument('--train_size_factor', type = float, default = 0.999)
+    parser.add_argument('--initial_lr', type = float, default = 1.42)
+    parser.add_argument('--train_size_factor', type = float, default = 0.9995)
     # parser.add_argument('--test_size_factor', type = float, default = 0.001)
     parser.add_argument('--num_layers', type = int, default = 6)
     parser.add_argument('--heads', type = int, default = 8)
@@ -100,6 +102,14 @@ def lambda_lr(step_num, d_model, warmup_steps=5000):
         np.power(step_num, -0.5),
         step_num * np.power(warmup_steps, -1.5)])
 
+def test_collate_fn(batch):
+    # with outliers label mixed in
+    x, cell_idx, labels = zip(*batch)
+    x_batch = torch.stack(x)
+    cell_idx = torch.stack(cell_idx)
+    labels_batch = torch.stack(labels)
+    return x_batch, cell_idx, labels_batch
+
 def collate_fn(batch):
     x, cell_idx = zip(*batch)
     x_batch = torch.stack(x)
@@ -138,7 +148,7 @@ def tensors_to_csv(tensor1, tensor2, output_dir, cell_id, reshape_dim = (143, 5)
     plt.savefig (image_file_path)
     plt.close()
 
-def train_model(train_dataloader, test_dataloader, decoder, optimizer, scheduler, criterion, epochs, batch_size, train_size, test_size, learning_rate,
+def train_model(train_dataloader, test_dataloader, decoder, optimizer, scheduler, criterion, test_criterion, epochs, batch_size, train_size, test_size, learning_rate,
                 num_layers, heads, dim_k, dim_v, dropout, encoder_size, device, if_write, pe, MHA, pe_method, sequence_length = 6, predict_length = 1):
     wandb.init(
         project = "Transformer_CDR",
@@ -199,39 +209,48 @@ def train_model(train_dataloader, test_dataloader, decoder, optimizer, scheduler
         print(f'---------Epoch: {epoch}------, average loss of the dataset: {avg_batch_loss}------')
 
                 ## Test Loss for each 100 epochs of training
-        if (epoch + 1) % 100 == 0:
-            test_step = (epoch + 1) // 100
+        if (epoch - 1) % 50 == 0:
+            test_step = (epoch - 1) // 50
             test_batch_num = 0
-            test_batch_step = 0
+            test_total_auc = 0.0
             test_total_loss = 0.0
+            ## TODO: fit the shape of new batch inputs with outliers.
             for batch in test_dataloader:
                 cell_idx = batch[1]
                 x_batch = batch[0]
+                permute_labels = batch[2] # outliers positions (b, t, f)
                 x_batch = x_batch.view(-1, 144, 5).to(device)
-                label = x_batch[:, 1:, :].to(device)
+                label = x_batch[:, 1:, :].to(device) # (b, t-1, f) to align with predictions.
+                permute_labels = permute_labels[:, 1:, :].to(device) # (b, t-1, f) to align with predictions.
                 print(f'Cells at the batch: {cell_idx.tolist()}')
                 input_mask = future_mask(x_batch.shape[1]).unsqueeze(0).to(device)
 
                 test_batch_loss = 0.0
+                test_batch_auc = 0.0
                 test_num_cells = len(cell_idx)
                 for id, cell in enumerate(cell_idx):
                     input = x_batch[id].unsqueeze(0).to(device)
                     out = decoder(batch_size = 1, x = input, future_mask = input_mask, pe = pe, MHA = MHA, pe_method = pe_method, status = 'predict')
                     out_loss = out[:, :-1, :]
-                    label_loss = label[id]
+                    label_batch = label[id]
                     if (epoch + 1) == epochs:
                         if if_write:
-                            tensors_to_csv(out_loss, label_loss, output_dir = new_run_dir, cell_id = cell)
-                    loss = criterion(out_loss, label_loss)
-
-                    test_batch_loss += loss.item ()
+                            tensors_to_csv(out_loss, label_batch, output_dir = new_run_dir, cell_id = cell)
+                    loss = criterion(out_loss.squeeze(0), label_batch)
+                    scores = test_criterion(out_loss.squeeze(0), label_batch) # (t-1, f)
+                    all_labels = permute_labels[id].view(-1)
+                    all_scores = scores.view(-1)
+                    auc_cell = roc_auc_score(all_labels.cpu().detach().numpy(), all_scores.cpu().detach().numpy())
+                    print(f'Test Cell: {cell}, AUC: {auc_cell}')
+                    test_batch_auc += auc_cell
+                    test_batch_loss += loss.item()
                 test_batch_num += test_num_cells
-                test_batch_step += 1
                 test_total_loss += test_batch_loss
+                test_total_auc += test_batch_auc
 
                     #wandb.log({'cell_id': cell, 'prediction': out, 'target': label})
-                wandb.log ({"Test Loss": test_batch_loss / test_num_cells})
-            wandb.log({'Average Test Loss': test_total_loss/test_batch_num, 'Test Step': test_step})
+                wandb.log ({"Test Loss": test_batch_loss / test_num_cells, "Test cell AUC": test_batch_auc / test_num_cells})
+            wandb.log({'Average Test Loss': test_total_loss/test_batch_num, 'Test Step': test_step, 'Test AUC': test_total_auc/test_batch_num})
 
 
     print(f'---------------------------Training ends for the dataset-------------------------------------')
@@ -243,6 +262,7 @@ def main():
     # -----------------------------------------------------------------------------------------
     opt = parse_args()
     criterion = nn.MSELoss()
+    test_criterion = nn.MSELoss(reduction='none')
     initial_lr = opt.initial_lr
     batch_size = opt.batch_size
     sequence_length = opt.sequence_length
@@ -294,16 +314,21 @@ def main():
 
     train_dataset, test_dataset = random_split(sets, [train_size, test_size])
 
+    test_data = torch.stack([test_dataset.dataset[i][0] for i in test_dataset.indices]).squeeze(1) # (b, t, f)
+
+    permuted_data, outlier_label = gen_outliers.gen_transformer_outlier_manually(test_data, scale = 0.5, outlier_fraction = 0.1)
+    permuted_test_dataset = TensorDataset(permuted_data, torch.tensor(test_dataset.indices), outlier_label)
+
     train_loader = DataLoader(train_dataset, batch_size = batch_size, shuffle = True,
                                   collate_fn = collate_fn)
-    test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = True,
-                                    collate_fn = collate_fn)
+    test_loader = DataLoader(permuted_test_dataset, batch_size = batch_size, shuffle = False,
+                                    collate_fn = test_collate_fn)
 
     # # -----------------------------------------------------------------------------------------
     # # -------------------------------- Train --------------------------------------------------
     # # -----------------------------------------------------------------------------------------
     print(f'---------------------------Training dataset: {dataset}-------------------------------------')
-    train_model(train_loader, test_loader, decoder, optimizer, scheduler, criterion, epochs = epochs, batch_size = batch_size,
+    train_model(train_loader, test_loader, decoder, optimizer, scheduler, criterion, test_criterion, epochs = epochs, batch_size = batch_size,
                     train_size = train_size_factor, test_size = test_size_factor, learning_rate = initial_lr,
                     num_layers = num_layers, heads = heads, dim_k = dim_k, dim_v = dim_v, dropout = dropout,
                     encoder_size = encoder_size, device = device, if_write = if_write, pe = pe, MHA = MHA, pe_method = pe_method,
